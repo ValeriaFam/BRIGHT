@@ -1,0 +1,30 @@
+[[1]]
+[1] "Error in data.frame(row.names = colnames(tr_counts), condition = factor(c(rep(\"DMSO\",  : \n  row names supplied are of the wrong length\n"
+attr(,"class")
+[1] "try-error"
+attr(,"condition")
+<simpleError in data.frame(row.names = colnames(tr_counts), condition = factor(c(rep("DMSO",     4), rep("STM", 4)), levels = c("DMSO", "STM"))): row names supplied are of the wrong length>
+
+[[2]]
+NULL
+
+[[3]]
+[1] "Error in data.frame(row.names = colnames(tr_counts), condition = factor(c(rep(\"DMSO\",  : \n  row names supplied are of the wrong length\n"
+attr(,"class")
+[1] "try-error"
+attr(,"condition")
+<simpleError in data.frame(row.names = colnames(tr_counts), condition = factor(c(rep("DMSO",     4), rep("STM", 4)), levels = c("DMSO", "STM"))): row names supplied are of the wrong length>
+
+[[4]]
+NULL
+
+[[5]]
+[1] "Error in data.frame(row.names = colnames(tr_counts), condition = factor(c(rep(\"DMSO\",  : \n  row names supplied are of the wrong length\n"
+attr(,"class")
+[1] "try-error"
+attr(,"condition")
+<simpleError in data.frame(row.names = colnames(tr_counts), condition = factor(c(rep("DMSO",     4), rep("STM", 4)), levels = c("DMSO", "STM"))): row names supplied are of the wrong length>
+
+[[6]]
+NULL
+
