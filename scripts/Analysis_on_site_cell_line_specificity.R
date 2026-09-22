@@ -454,26 +454,36 @@ names(HCS) <- sapply(strsplit(HCS_names, "/", fixed = TRUE), `[`, 1)
 
 df_barplot <- data.frame(cbind("HCS"=unlist(HCS),"Union_sites"=conteggi$n_siti_union,"Coverage"=coverage_dmso_sum$total_coverage))
 df_long <- df_barplot %>%
-  mutate(Coverage = Coverage / 1e3) %>%
   rownames_to_column("cell_line") %>%
+  mutate(cell_line = fct_reorder(cell_line, Coverage, .desc = TRUE)) %>%  # <-- ordinamento qui
   pivot_longer(-cell_line, names_to = "metric", values_to = "value") %>%
   mutate(
-    metric = recode(metric, Coverage = "Coverage (x10^3 reads)"),
-    metric = factor(metric, levels = c("HCS", "Union_sites", "Coverage (x10^3 reads)"))
+    metric = factor(metric, levels = c("HCS", "Union_sites", "Coverage"))
   )
+scale_factor <- max(df_barplot$Coverage) / max(df_barplot$HCS, df_barplot$Union_sites)
+
+df_long <- df_long %>%
+  mutate(value_plot = if_else(metric == "Coverage", value / scale_factor, value))
 
 cols <- c("HCS" = "#1b9e77",
           "Union_sites" = "#d95f02",
-          "Coverage (x10^3 reads)" = "#7570b3")
+          "Coverage" = "#7570b3")
 
-p <- ggplot(df_long, aes(x = cell_line, y = value, fill = metric)) +
+
+
+p <- ggplot(df_long, aes(x = cell_line, y = value_plot, fill = metric)) +
   geom_col(position = position_dodge(width = 0.8), width = 0.75) +
-  scale_y_continuous(labels = scales::label_comma(),
-                     expand = expansion(mult = c(0, 0.05))) +
+  scale_y_continuous(
+    name = "Numero di siti (HCS, Union_sites)",
+    labels = label_comma(),
+    expand = expansion(mult = c(0, 0.05)),
+    sec.axis = sec_axis(~ . * scale_factor,
+                         name = "Coverage (reads)",
+                         labels = label_comma())
+  ) +
   scale_fill_manual(values = cols, name = NULL) +
-  labs(x = NULL, y = "Numero di siti  and  coverage (x10^3)") +
+  labs(x = NULL) +
   theme_bw(base_size = 13) +
   theme(legend.position = "top")
 
-p
-ggsave("barplot_HCS_union_coverage.pdf", p, width = 9, height = 6)
+ggsave("barplot_HCS_union_coverage_dualaxis.pdf", p, width = 9, height = 6)
