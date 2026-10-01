@@ -542,17 +542,27 @@ stats_df <- df_plot %>%
     upper_fence = q3 + 1.5 * iqr
   )
 
+stats_df$cell_line <- factor(stats_df$cell_line,
+                             levels = c("MCF7", "BT483", "T47D", "SUM159", "MDAMB231", "BT549"))
 p <- ggplot(stats_df, aes(x = cell_line)) +
   geom_crossbar(aes(y = q2, ymin = q1, ymax = q3, fill = cell_line), width = 0.5, alpha = 0.6) +
   geom_errorbar(aes(ymin = lower_fence, ymax = upper_fence), width = 0.2) +
-  geom_text(aes(y = q1, label = paste0("Q1=", q1)), hjust = 1.3, size = 3) +
-  geom_text(aes(y = q2, label = paste0("Q2=", q2)), hjust = 1.3, size = 3, fontface = "bold") +
-  geom_text(aes(y = q3, label = paste0("Q3=", q3)), hjust = 1.3, size = 3) +
-  geom_text(aes(y = lower_fence, label = paste0("LF=", round(lower_fence,1))), hjust = -0.3, size = 3, color = "blue") +
-  geom_text(aes(y = upper_fence, label = paste0("UF=", round(upper_fence,1))), hjust = -0.3, size = 3, color = "blue") +
-  theme_minimal() +
-  labs(title = "Statistics on number of sites", x = "Cell line", y = "n_siti") +
-  theme(legend.position = "none")
+  geom_text(aes(y = q1, label = paste0("Q1=", q1)),
+           hjust = 0, nudge_x = 0.32, size = 3) +
+  geom_text(aes(y = q2, label = paste0("Q2=", q2)),
+           hjust = 0, nudge_x = 0.32, size = 3, fontface = "bold") +
+  geom_text(aes(y = q3, label = paste0("Q3=", q3)),
+           hjust = 0, nudge_x = 0.32, size = 3) +
+  geom_text(aes(y = lower_fence, label = paste0("LF=", round(lower_fence, 1))),
+           hjust = 1, nudge_x = -0.32, size = 3, color = "blue") +
+  geom_text(aes(y = upper_fence, label = paste0("UF=", round(upper_fence, 1))),
+           hjust = 1, nudge_x = -0.32, size = 3, color = "blue") +
+  scale_fill_manual(values = palette) +
+  theme_classic() +
+  labs(title = "Statistics on number of sites", x = "Cell line", y = "#sites") +
+  theme(legend.position = "none",
+        axis.line = element_line(colour = "black"))
+
 ggsave("Boxplot_statistics_on_number_sites.pdf", p, width = 9, height = 6)
 
 
@@ -585,10 +595,10 @@ p <- ggplot(df_all, aes(x = site_cat, y = log10(transcript_length), fill = cell_
   ) +
   scale_fill_manual(values = palette) +
   labs(
-    x = "Numero di siti m6A per trascritto",
-    y = "Log10(Lunghezza trascritto)",
+    x = "Nummber of m6A sites per transcript",
+    y = "Log10(Length of transcript)",
     fill = "Cell line",
-    title = "Lunghezza dei trascritti in funzione del numero di siti m6A, per cell line"
+    title = "Length of transcript as a function of the number of m6A sites, per cell line"
   ) +
   theme_bw(base_size = 13)
 

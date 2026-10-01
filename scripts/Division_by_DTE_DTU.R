@@ -66,8 +66,8 @@ Extract_commons_transcripts <- function(sets, luminal, basal, min_n = 5) {
 luminal <- cell_line[1:3]
 basal <- cell_line[4:6]
 
-res_up   <- Extract_commons_transcripts(up,   luminal, basal)
-res_down <- Extract_commons_transcripts(down, luminal, basal)
+res_up   <- Extract_commons_transcripts(up_tr,   luminal, basal)
+res_down <- Extract_commons_transcripts(down_tr, luminal, basal)
 
 #Summary
 recap <- data.frame(
@@ -79,7 +79,7 @@ recap <- data.frame(
 print(recap)
 
 #How many DTE are also DGE? (quanti trascritti nella mia classe appartengono a un gene disregolato)
-conta_concordanza_gene <- function(res, tab, cell_lines, min_5_6 = 5, min_2_3 = 2) {
+conta_gene_disregolati <- function(res, tab, cell_lines, min_5_6 = 5, min_2_3 = 2) {
 
   classi <- list(
     almeno_5_su_6 = list(ids = res$almeno_5_su_6, min_n = min_5_6),
@@ -87,156 +87,155 @@ conta_concordanza_gene <- function(res, tab, cell_lines, min_5_6 = 5, min_2_3 = 
     luminal_only  = list(ids = res$luminal_only,  min_n = min_2_3)
   )
 
-  do.call(rbind, lapply(names(classi), function(k) {
+  risultati <- lapply(names(classi), function(k) {
     ids   <- classi[[k]]$ids
     min_n <- classi[[k]]$min_n
 
-    # per ogni trascritto della classe, prendi lo status_genes riportato
-    # nelle cell line in cui il trascritto e' presente (matrice TRUE)
     long <- do.call(rbind, lapply(cell_lines, function(cl) {
       presenti <- ids[ids %in% rownames(res$matrice)[res$matrice[, cl]]]
       if (length(presenti) == 0) return(NULL)
-
       df <- tab[[cl]]
-      sub <- df[df$chrom %in% presenti, c("chrom", "status_genes")]
+      sub <- df[df$chrom %in% presenti, c("chrom", "gene_id", "status_genes")]
       if (nrow(sub) == 0) return(NULL)
       sub$cell_line <- cl
       sub
     }))
 
-    # n. di occorrenze in cui il gene e' UP/DOWN, per trascritto
     n_disreg <- tapply(long$status_genes %in% c("UP", "DOWN"), long$chrom, sum)
+    transcript_disregolati <- names(n_disreg)[n_disreg >= min_n]
 
-    concordanti <- names(n_disreg)[n_disreg >= min_n]
+    gene_map <- unique(long[, c("chrom", "gene_id")])
+    gene_disregolati <- unique(gene_map$gene_id[gene_map$chrom %in% transcript_disregolati])
+    gene_totali       <- unique(gene_map$gene_id[gene_map$chrom %in% ids])
 
-    data.frame(
-      classe                   = k,
-      soglia_min               = min_n,
-      n_transcript_totali      = length(ids),
-      n_transcript_concordanti = length(concordanti),
-      perc_concordanti         = round(100 * length(concordanti) / length(ids), 1)
+    list(
+      summary = data.frame(
+        classe = k, soglia_min = min_n,
+        n_transcript_totali = length(ids),
+        n_transcript_con_gene_disreg = length(transcript_disregolati),
+        n_gene_totali = length(gene_totali),
+        n_gene_disregolati = length(gene_disregolati),
+        perc_gene_disregolati = round(100 * length(gene_disregolati) / length(gene_totali), 1)
+      ),
+      gene_disregolati = gene_disregolati,
+      gene_totali       = gene_totali   # utile come "universe" per la GO
     )
-  }))
+  })
+  names(risultati) <- names(classi)
+  risultati
 }
 
 cell_lines <- dimnames(res_up$matrice)[[2]]
 
-riepilogo_up   <- conta_concordanza_gene(res_up,   tab, cell_lines)
-riepilogo_down <- conta_concordanza_gene(res_down, tab, cell_lines)
+risultati_down <- conta_gene_disregolati(res_down, tab, cell_lines)
+risultati_up   <- conta_gene_disregolati(res_up,   tab, cell_lines)
 
-print(riepilogo_up)
-print(riepilogo_down)
+do.call(rbind, lapply(risultati_down, `[[`, "summary"))   # riepilogo numerico
+library(clusterProfiler)
+library(org.Hs.eg.db)
 
-########################################################################################
+## universe comune a tutte le analisi: tutti i geni testati, in qualsiasi cell line
+universe_tutti <- unique(unlist(lapply(tab, function(df) df$gene_id)))
+cat(length(universe_tutti), "geni nell'universe\n")
 
-costruisci_df <- function(res, tab) {
+do_GO <- function(gene_ids, universe_ids = universe_tutti, ont = "BP") {
+  gene_ids_clean     <- sub("\\..*", "", gene_ids)
+  universe_ids_clean <- sub("\\..*", "", universe_ids)
 
-  cell_lines <- dimnames(res$matrice)[[2]]   # nomi delle 6 linee, dalla matrice
-
-  classi <- list(
-    almeno_5_su_6 = res$almeno_5_su_6,
-    basal_only    = res$basal_only,
-    luminal_only  = res$luminal_only
+  enrichGO(
+    gene          = gene_ids_clean,
+    universe      = universe_ids_clean,
+    OrgDb         = org.Hs.eg.db,
+    keyType       = "ENSEMBL",
+    ont           = ont,
+    pAdjustMethod = "BH",
+    pvalueCutoff  = 0.05,
+    qvalueCutoff  = 0.2,
+    readable      = TRUE
   )
-
-  # formato lungo: trascritto x cell line x classe, solo dove il trascritto e' nella classe e presente in quella cell line (matrice TRUE)
-  long <- do.call(rbind, lapply(names(classi), function(k) {
-    ids <- classi[[k]]
-    do.call(rbind, lapply(cell_lines, function(cl) {
-      # trascritti di questa classe presenti in questa cell line (matrice TRUE)
-      presenti <- ids[ids %in% rownames(res$matrice)[res$matrice[, cl]]]
-      if (length(presenti) == 0) return(NULL)
-
-      df <- tab[[cl]]
-      sub <- df[df$chrom %in% presenti, c("chrom", "log2FC", "p.val")]
-      if (nrow(sub) == 0) return(NULL)
-      sub$classe    <- k
-      sub$cell_line <- cl
-      sub
-    }))
-  }))
-
-  # formato largo: una riga per trascritto/classe, colonne log2FC.<cl> e p.val.<cl>
-  wide <- reshape(long, idvar = c("chrom", "classe"),
-                  timevar = "cell_line", direction = "wide")
-  rownames(wide) <- NULL
-
-  lfc_cols <- grep("^log2FC\\.", names(wide), value = TRUE)
-  p_cols   <- grep("^p\\.val\\.", names(wide), value = TRUE)
-
-  # mediana solo per almeno_5_su_6
-  is5 <- wide$classe == "almeno_5_su_6"
-  wide$log2FC_mediana <- NA_real_
-  wide$p.val_mediana  <- NA_real_
-  wide$log2FC_mediana[is5] <- apply(wide[is5, lfc_cols, drop = FALSE], 1, median, na.rm = TRUE)
-  wide$p.val_mediana[is5]  <- apply(wide[is5, p_cols,   drop = FALSE], 1, median, na.rm = TRUE)
-
-  wide$n_cell_lines <- rowSums(!is.na(wide[, lfc_cols, drop = FALSE]))
-
-  wide
 }
 
-df_down <- costruisci_df(res_down, tab)
-df_up   <- costruisci_df(res_up,   tab)  
+go_down <- lapply(risultati_down, function(r) {
+  if (length(r$gene_disregolati) < 3) return(NULL)
+  do_GO(r$gene_disregolati)   # usa universe_tutti di default
+})
 
-table(df_down$classe)
-head(df_down)
+go_up <- lapply(risultati_up, function(r) {
+  if (length(r$gene_disregolati) < 3) return(NULL)
+  do_GO(r$gene_disregolati)
+})
 
-prepara_plot_df <- function(wide, direzione) {
+# controllo rapido
+sapply(go_down, function(x) if (is.null(x)) NA else nrow(as.data.frame(x)))
+sapply(go_up,   function(x) if (is.null(x)) NA else nrow(as.data.frame(x)))
 
-  lfc_cols <- grep("^log2FC\\.", names(wide), value = TRUE)
-  p_cols   <- grep("^p\\.val\\.", names(wide), value = TRUE)
+dotplot(go_down$basal_only, showCategory = 15) +
+  ggtitle("GO (BP) - DOWN, basal_only")
 
-  # --- almeno_5_su_6: un punto per trascritto, valore = mediana ---
-  is5 <- wide$classe == "almeno_5_su_6"
-  agg <- data.frame(
-    chrom      = wide$chrom[is5],
-    classe     = "almeno_5_su_6",
-    log2FC     = apply(wide[is5, lfc_cols, drop = FALSE], 1, median, na.rm = TRUE),
-    p.val      = apply(wide[is5, p_cols,   drop = FALSE], 1, median, na.rm = TRUE)
-  )
+dotplot(go_up$almeno_5_su_6, showCategory = 15) +
+  ggtitle("GO (BP) - UP, almeno 5/6")
 
-  # --- basal_only / luminal_only: un punto per trascritto x cell line ---
-  altre <- wide[!is5, ]
-  long <- do.call(rbind, lapply(seq_len(nrow(altre)), function(i) {
-    row <- altre[i, ]
-    do.call(rbind, lapply(lfc_cols, function(lc) {
-      cl <- sub("^log2FC\\.", "", lc)
-      pc <- paste0("p.val.", cl)
-      if (is.na(row[[lc]])) return(NULL)
-      data.frame(chrom = row$chrom, classe = row$classe,
-                log2FC = row[[lc]], p.val = row[[pc]])
-    }))
-  }))
+go_all <- list(DOWN = go_down, UP = go_up)
 
-  out <- rbind(agg, long)
-  out$direzione <- direzione
-  out
+for (direzione in names(go_all)) {
+  for (classe in names(go_all[[direzione]])) {
+
+    go_res <- go_all[[direzione]][[classe]]
+    if (is.null(go_res) || nrow(as.data.frame(go_res)) == 0) {
+      message("Nessun termine significativo per: ", direzione, " - ", classe)
+      next
+    }
+
+    p <- dotplot(go_res, showCategory = 15) +
+      ggtitle(paste0("GO (BP) - ", direzione, ", ", classe))
+
+    file_out <- file.path(paste0("GO_dotplot_", direzione, "_", classe, ".pdf"))
+    ggsave(file_out, p, width = 8, height = 7)
+    cat("[done] salvato:", file_out, "\n")
+  }
 }
 
-plot_df <- rbind(
-  prepara_plot_df(df_up,   "UP"),
-  prepara_plot_df(df_down, "DOWN")
-)
+########################## DTU and DTE #########################################################
+DRIMseq_names <- list.files(path=".",pattern="prioritized_DIUs_DMSO_vs_STM",recursive=TRUE)[-1]
+DRIMseq_results <- lapply(DRIMseq_names,function(i){
+		foe <- read.table(i,sep="\t",header=TRUE)
+		foe <- foe$txID
+	})
+names(DRIMseq_results) <- sapply(strsplit(DRIMseq_names, "/"), `[`, 2)
 
-plot_df$neglog10p <- -log10(plot_df$p.val)
-plot_df$classe    <- factor(plot_df$classe,
-                            levels = c("almeno_5_su_6", "basal_only", "luminal_only"))
-plot_df$direzione <- factor(plot_df$direzione, levels = c("UP", "DOWN"))
-plot_df <- plot_df[order(plot_df$classe), ]   # disegna prima i più numerosi
+res_DTU <- Extract_commons_transcripts(DRIMseq_results, luminal = luminal, basal = basal, min_n = 5)
+# riepilogo numerico
+#sapply(res_DTU[c("almeno_5_su_6","basal_only","luminal_only")], length)
 
-cols <- c(almeno_5_su_6 = "grey60", basal_only = "#999933", luminal_only = "#CC6677")
+incrocia_DTU_DTE <- function(res_dtu, res_up, res_down) {
 
-p <- ggplot(plot_df, aes(x = log2FC, y = neglog10p, colour = classe)) +
-  geom_point(alpha = 0.6, size = 1.3) +
-  geom_hline(yintercept = -log10(0.05), linetype = "dashed", colour = "grey50") +
-  geom_vline(xintercept = 0, linetype = "dashed", colour = "grey50") +
-  scale_colour_manual(values = cols, name = "Classe",
-                      labels = c("≥5/6 (mediana)", "basal only", "luminal only")) +
-  facet_wrap(~ direzione, ncol = 2) +
-  labs(x = "log2FC", y = "-log10(p.val)") +
-  theme_bw() +
-  theme(strip.background = element_rect(fill = "grey90"))
+  classi <- c("almeno_5_su_6", "basal_only", "luminal_only")
+
+  do.call(rbind, lapply(classi, function(k) {
+
+    dtu_k <- res_dtu[[k]]
+    dte_up_k   <- res_up[[k]]
+    dte_down_k <- res_down[[k]]
+    dte_k <- union(dte_up_k, dte_down_k)   # DTE in quella classe, UP o DOWN indifferentemente
+
+    comuni       <- intersect(dtu_k, dte_k)
+    comuni_up    <- intersect(dtu_k, dte_up_k)
+    comuni_down  <- intersect(dtu_k, dte_down_k)
+
+    data.frame(
+      classe              = k,
+      n_DTU               = length(dtu_k),
+      n_DTE               = length(dte_k),
+      n_DTU_e_DTE         = length(comuni),
+      n_DTU_e_DTE_UP      = length(comuni_up),
+      n_DTU_e_DTE_DOWN    = length(comuni_down)
+    )
+  }))
+}
+
+riepilogo_incrocio <- incrocia_DTU_DTE(res_DTU, res_up, res_down)
+print(riepilogo_incrocio)
 
 
-ggsave("DTE_log2FC_vs_pval.pdf", p, width = 10, height = 8)
+
+
