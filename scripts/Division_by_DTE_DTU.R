@@ -202,7 +202,6 @@ plots <- list(
 
 for (n in names(plots)) {
   ggsave(file.path(paste0("venn_", n, ".pdf")), plots[[n]], width = 5, height = 5)
-  ggsave(file.path(paste0("venn_", n, ".png")), plots[[n]], width = 5, height = 5, dpi = 300)
 }
 #How many DTE are also DGE? (quanti trascritti nella mia classe appartengono a un gene disregolato)
 conta_gene_disregolati <- function(res, tab, cell_lines, min_5_6 = 5, min_2_3 = 2) {
@@ -533,7 +532,11 @@ DRIMseq_results <- lapply(DRIMseq_names,function(i){
 	})
 names(DRIMseq_results) <- sapply(strsplit(DRIMseq_names, "/"), `[`, 2)
 
-res_DTU <- Extract_commons_transcripts(DRIMseq_results, luminal = luminal, basal = basal, min_n = 5)
+Scisorseq_results <- readRDS("Scisorseq_ENST.rds")
+Scisorseq_iso <- lapply(Scisorseq_results,function(i)unique(i$Isoform))
+
+res_DTU_drimseq <- Extract_commons_transcripts(DRIMseq_results, luminal = luminal, basal = basal, min_n = 5)
+res_DTU_scisorseq <- Extract_commons_transcripts(Scisorseq_iso, luminal = luminal, basal = basal, min_n = 5)
 # riepilogo numerico
 #sapply(res_DTU[c("almeno_5_su_6","basal_only","luminal_only")], length)
 
@@ -563,8 +566,9 @@ incrocia_DTU_DTE <- function(res_dtu, res_up, res_down) {
   }))
 }
 
-riepilogo_incrocio <- incrocia_DTU_DTE(res_DTU, res_up, res_down)
-print(riepilogo_incrocio)
+riepilogo_incrocio_drimseq <- incrocia_DTU_DTE(res_DTU_drimseq, res_up, res_down)
+riepilogo_incrocio_scisorseq <- incrocia_DTU_DTE(res_DTU_scisorseq, res_up, res_down)
+
 
 
 
