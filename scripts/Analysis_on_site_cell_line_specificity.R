@@ -21,6 +21,7 @@ library("ComplexUpset")
 library("patchwork")
 library("clusterProfiler")
 library("org.Hs.eg.db")
+library("scales")
 
 cell_line <- c("MCF7","BT483","T47D","SUM159","MDAMB231","BT549")
 palette <- c(MCF7="#CC6677",BT483="#882255",T47D="#AA4499",SUM159="#117733",MDAMB231="#999933",BT549="#44AA99")
@@ -40,7 +41,7 @@ medians <- sapply(tab, function(df) {
   median(n)
 })
 #BT483    BT549     MCF7 MDAMB231   SUM159     T47D 
-#    4        3        3        4        4        3 
+#    4        3        3        4        4        4 
 
 #Split each row in as many rows as the sites
 tab_one_site_per_row <- lapply(tab,function(i){
@@ -491,6 +492,11 @@ ggsave("barplot_HCS_union_coverage_dualaxis.pdf", p, width = 9, height = 6)
 ################################################################################################################
 
 #Which percetange of sites undergo a reduction of at least one fold?
+HCS_names <-list.files(path="./",pattern="High_condifence_sites.csv",recursive=TRUE)
+HCS <- lapply(HCS_names,function(i){
+    foe <- read.csv(i,header=TRUE)
+  })
+
 HCS_log2FC <- lapply(HCS,function(i){
 	dens = i
 	dens$mean_DMSO <- rowMeans(dens[, grep("percent_modified_DMSO", colnames(dens))], na.rm = TRUE)

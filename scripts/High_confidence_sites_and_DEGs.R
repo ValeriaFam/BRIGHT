@@ -24,12 +24,11 @@ palette <- c("#CC6677","#882255","#AA4499","#117733","#999933","#44AA99")
 n_cores <- 1
 gtf <- import("/projects/CGS_shared/vfama/BRIGHT_PROJECT/filtered_corrected_assembly.gtf")
 txdb <- makeTxDbFromGFF("/projects/CGS_shared/vfama/BRIGHT_PROJECT/filtered_corrected_assembly.gtf")
-txdb_novel <- makeTxDbFromGFF("/projects/CGS_shared/cugolini/BC_atlas/analysis/all_cell_lines/CFCseq/transcript_gene_intersection/ORF_annotator/gffcompare/filtered_corrected_assembly.sorted.only_novel.gtf")
 gtf_df <- as.data.frame(gtf) %>%
 	  filter(type == "transcript") %>%
 	  dplyr::select(transcript_id, gene_id,gene_type,transcript_type) %>%
 	  distinct()
-ORF_prediction <- read.table("/projects/CGS_shared/cugolini/BC_atlas/analysis/all_cell_lines/CFCseq/transcript_gene_intersection/ORF_annotator/assembly_gtf_CDS_coding_prediction.tsv",sep="\t",header=TRUE)
+ORF_prediction <- read.table("ORF_coord_extraction.tsv",sep="\t",header=TRUE)
 
 mclapply(seq_along(cell_line),function(k){
 
@@ -163,84 +162,82 @@ mclapply(seq_along(cell_line),function(k){
 	# ######################## METAGENE #################################
 
 	#Get UTR and CDS lengths per transcript
-	# utr5  <- fiveUTRsByTranscript(txdb,  use.names = TRUE)
-	# cds   <- cdsBy(txdb, by = "tx",     use.names = TRUE)
-	# utr3  <- threeUTRsByTranscript(txdb, use.names = TRUE)
-	# utr5_len <- sum(width(utr5))
-	# cds_len  <- sum(width(cds))
-	# utr3_len <- sum(width(utr3))
-	# tx_lengths <- tibble(
-	#   transcript_id = names(utr5_len),
-	#   utr5_len = as.numeric(utr5_len)
-	# ) %>%
-	#   full_join(tibble(transcript_id = names(cds_len),  cds_len  = as.numeric(cds_len)),  by = "transcript_id") %>%
-	#   full_join(tibble(transcript_id = names(utr3_len), utr3_len = as.numeric(utr3_len)), by = "transcript_id") %>%
-	#   replace_na(list(utr5_len = 0, cds_len = 0, utr3_len = 0))
-	# # --- 2. Assuming your df has columns: transcript_id, position_on_transcript ---
-	# # Merge with region lengths
-	# common_sites_btw_reps_all$chrom <- sub("\\([+-]\\)$", "",common_sites_btw_reps_all$chrom)
-	# df_sites <- common_sites_btw_reps_all %>%
-	#   left_join(tx_lengths,  by = c("chrom" = "transcript_id")) %>%
-	#   mutate(
-	#     tx_len = utr5_len + cds_len + utr3_len,
-	#     # Classify each site into region
-	#     region = case_when(
-	#       start_position1 <= utr5_len                          ~ "5'UTR",
-	#       start_position1 <= utr5_len + cds_len                ~ "CDS",
-	#       start_position1 <= tx_len                            ~ "3'UTR",
-	#       TRUE ~ NA_character_
-	#     ),
-	#     # Normalize position within each region to [0, 1]
-	#     norm_position = case_when(
-	#       region == "5'UTR" ~ start_position1 / utr5_len,
-	#       region == "CDS"   ~ (start_position1 - utr5_len) / cds_len,
-	#       region == "3'UTR" ~ (start_position1 - utr5_len - cds_len) / utr3_len
-	#     ),
-	#     # Map to metagene scale: 5'UTR=[0,1], CDS=[1,2], 3'UTR=[2,3]
-	#     meta_position = case_when(
-	#       region == "5'UTR" ~ norm_position,
-	#       region == "CDS"   ~ 1 + norm_position,
-	#       region == "3'UTR" ~ 2 + norm_position
-	#     )
-	#   ) %>%
-	#   filter(!is.na(meta_position))
-
-	# #  # --- 3. Compute density per treatment ---
-	# # Pivot to get a "is this site in WT / STORM" column
-	# df_wt    <- df_sites %>% filter(rowMeans(!is.na(dplyr::select(., contains("percent_modified_DMSO"))))    > 0)
-	# df_storm <- df_sites %>% filter(rowMeans(!is.na(dplyr::select(., contains("percent_modified_STORM")))) > 0)
+	tx_lengths <- ORF_prediction %>%                      # ORF_table = la tua tabella
+	  distinct(transcript_id, .keep_all = TRUE) %>%
+	  filter(!is.na(ORF_Start), !is.na(ORF_End)) %>% # solo trascritti con ORF
+	  transmute(
+	    transcript_id,
+	    tx_len   = as.numeric(transcript_length),            # nome della tua colonna
+	    utr5_len = ORF_Start - 1,
+	    cds_len  = ORF_End - ORF_Start + 1,
+	    utr3_len = transcript_length - ORF_End
+	  )
 	
-	# df_density <- bind_rows(
-	#   df_sites %>% 
-	#     dplyr::select(meta_position, matches("percent_modified.*DMSO")) %>%
-	#     pivot_longer(-meta_position, names_to = "sample", values_to = "pct") %>%
-	#     filter(!is.na(pct), !is.na(meta_position)) %>%
-	#     mutate(treatment = "DMSO"),
+	common_sites_btw_reps_all$chrom <- sub("\\([+-]\\)$", "", common_sites_btw_reps_all$chrom)
+	
+	df_sites <- common_sites_btw_reps_all %>%
+	  inner_join(tx_lengths, by = c("chrom" = "transcript_id")) %>%
+	  mutate(
+	    region = case_when(
+	      start_position1 <= utr5_len             ~ "5'UTR",
+	      start_position1 <= utr5_len + cds_len   ~ "CDS",
+	      start_position1 <= tx_len               ~ "3'UTR",
+	      TRUE ~ NA_character_
+	    ),
+	    norm_position = case_when(
+	      region == "5'UTR" ~ start_position1 / utr5_len,
+	      region == "CDS"   ~ (start_position1 - utr5_len) / cds_len,
+	      region == "3'UTR" ~ (start_position1 - utr5_len - cds_len) / utr3_len
+	    ),
+	    meta_position = case_when(
+	      region == "5'UTR" ~ norm_position,
+	      region == "CDS"   ~ 1 + norm_position,
+	      region == "3'UTR" ~ 2 + norm_position
+	    )
+	  ) %>%
+	  filter(!is.na(meta_position))
+	
+	#  # --- 3. Compute density per treatment ---
+	# Pivot to get a "is this site in WT / STORM" column
+	df_wt    <- df_sites %>% filter(rowMeans(!is.na(dplyr::select(., contains("percent_modified_DMSO"))))    > 0)
+	df_storm <- df_sites %>% filter(rowMeans(!is.na(dplyr::select(., contains("percent_modified_STORM")))) > 0)
+	
+	df_density <- bind_rows(
+	  df_sites %>% 
+	    dplyr::select(meta_position, matches("percent_modified.*DMSO")) %>%
+	    pivot_longer(-meta_position, names_to = "sample", values_to = "pct") %>%
+	    filter(!is.na(pct), !is.na(meta_position)) %>%
+	    mutate(treatment = "DMSO"),
 	  
-	#   df_sites %>% 
-	#     dplyr::select(meta_position, matches("percent_modified.*STORM")) %>%
-	#     pivot_longer(-meta_position, names_to = "sample", values_to = "pct") %>%
-	#     filter(!is.na(pct), !is.na(meta_position)) %>%
-	#     mutate(treatment = "STORM")
-	# )
+	  df_sites %>% 
+	    dplyr::select(meta_position, matches("percent_modified.*STORM")) %>%
+	    pivot_longer(-meta_position, names_to = "sample", values_to = "pct") %>%
+    filter(!is.na(pct), !is.na(meta_position)) %>%
+    mutate(treatment = "STORM")
+	)
 	
-	# # --- 4. Metagene plot ---
-	# p2 <- ggplot(df_density, aes(x = meta_position, color = treatment, linetype = treatment, group = sample)) +
-	#   geom_density(adjust = 0.5, linewidth = 1) +
-	#   scale_linetype_manual(values = c("DMSO" = "solid", "STORM" = "dashed")) +
-	#   scale_color_manual(values = c("DMSO" = "blue", "STORM" = "red")) +
-	#   scale_x_continuous(
-	#     breaks = c(0.5, 1.5, 2.5),
-	#     labels = c("5'UTR", "CDS", "3'UTR"),
-	#     limits = c(0, 3)
-	#   ) +
-	#   geom_vline(xintercept = c(1, 2), linetype = "dotted", color = "grey40") +
-	#   labs(x = "", y = "m6A site density",
-	#        color = "Treatment", linetype = "Treatment") +
-	#   theme_classic() +
-	#   theme(axis.text.x = element_text(size = 12, face = "bold"))
+	# --- 4. Metagene plot ---
+	p2 <- ggplot(df_density, aes(x = meta_position, color = treatment, linetype = treatment)) +
+  	# replicati: una curva per campione, sottile e trasparente
+  	geom_line(aes(group = sample), stat = "density", adjust = 0.5,
+  	          linewidth = 0.5, alpha = 0.35) +
+  	# curva per trattamento: replicati uniti, spessa
+  	geom_line(aes(group = treatment), stat = "density", adjust = 0.5,
+  	          linewidth = 1.3) +
+  	scale_linetype_manual(values = c("DMSO" = "solid", "STORM" = "dashed")) +
+  	scale_color_manual(values = c("DMSO" = "blue", "STORM" = "red")) +
+  	scale_x_continuous(
+  	  breaks = c(0.5, 1.5, 2.5),
+  	  labels = c("5'UTR", "CDS", "3'UTR"),
+  	  limits = c(0, 3)
+  	) +
+  	geom_vline(xintercept = c(1, 2), linetype = "dotted", color = "grey40") +
+  	labs(x = "", y = "m6A site density",
+  	     color = "Treatment", linetype = "Treatment") +
+  	theme_classic() +
+  	theme(axis.text.x = element_text(size = 12, face = "bold"))
 	
-	# ggsave(paste0(path,cell_line,"_metagene_m6A_density.pdf"), plot=p2,width = 8, height = 5)
+	ggsave(paste0(path,cell_line,"_metagene_m6A_density.pdf"), plot=p2,width = 8, height = 5)
 
 
 	# ######################### TABLE HCS AND VOLCANO PLOTS ###########################
@@ -412,7 +409,11 @@ mclapply(seq_along(cell_line),function(k){
 
 
 
+foe <- lapply(names(tab),function(i){
+        df <- tab[[i]]
+        table(df[grepl("ENSG00000136997",df$gene_id),]$status_gene)
 
+        })
 
 
 
