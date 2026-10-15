@@ -22,6 +22,8 @@ library("patchwork")
 library("clusterProfiler")
 library("org.Hs.eg.db")
 library("msigdbr")
+library("ggVennDiagram")
+library("stringr")
 
 cell_line <- c("MCF7","BT483","T47D","SUM159","MDAMB231","BT549")
 palette <- c(MCF7="#CC6677",BT483="#882255",T47D="#AA4499",SUM159="#117733",MDAMB231="#999933",BT549="#44AA99")
@@ -120,7 +122,7 @@ sig_ids <- function(gsea_list, thr = 0.05) {
 }
 sigH <- sig_ids(gsea_H)
 sigR <- sig_ids(gsea_R)
-sapply(sigH, length); sapply(sigR, length)
+#sapply(sigH, length); sapply(sigR, length)
 
 comuni_subtype <- function(sig_list, lines, min_n = length(lines)) {
   tb <- table(unlist(sig_list[lines]))
@@ -132,11 +134,118 @@ basH <- comuni_subtype(sigH, basal)
 lumR <- comuni_subtype(sigR, luminal)
 basR <- comuni_subtype(sigR, basal)
 
-lengths(list(lum_H = lumH, bas_H = basH, lum_R = lumR, bas_R = basR))
+classify <- function(df, lum_ids, bas_ids, lum_lines, bas_lines, max_other = 0) {
+  concordant <- function(ids, lines) {
+    df %>%
+      dplyr::filter(ID %in% ids, line %in% lines) %>%
+      dplyr::group_by(ID) %>%
+      dplyr::summarise(
+        ok  = dplyr::n_distinct(sign(NES)) == 1,
+        dir = sign(dplyr::first(NES)),
+        .groups = "drop"
+      ) %>%
+      dplyr::filter(ok) %>%
+      dplyr::select(ID, dir)
+  }
+  # numero di linee significative per termine in un dato sottotipo
+  n_sig <- function(lines) {
+    df %>%
+      dplyr::filter(line %in% lines) %>%
+      dplyr::group_by(ID) %>%
+      dplyr::summarise(n = sum(sig, na.rm = TRUE), .groups = "drop")
+  }
+  nsig_lum <- n_sig(lum_lines) %>% dplyr::rename(n_lum = n)
+  nsig_bas <- n_sig(bas_lines) %>% dplyr::rename(n_bas = n)
 
-list(R_comuni    = intersect(lumR, basR),
-     R_solo_lum  = setdiff(lumR, basR),
-     R_solo_bas  = setdiff(basR, lumR))
+  lum <- concordant(lum_ids, lum_lines) %>% dplyr::rename(dir_lum = dir)
+  bas <- concordant(bas_ids, bas_lines) %>% dplyr::rename(dir_bas = dir)
+
+  dplyr::full_join(lum, bas, by = "ID") %>%
+    dplyr::left_join(nsig_lum, by = "ID") %>%
+    dplyr::left_join(nsig_bas, by = "ID") %>%
+    dplyr::mutate(
+      n_lum = tidyr::replace_na(n_lum, 0),
+      n_bas = tidyr::replace_na(n_bas, 0),
+      class = dplyr::case_when(
+        !is.na(dir_lum) & !is.na(dir_bas) & dir_lum == dir_bas ~ "Shared",
+        !is.na(dir_lum) & !is.na(dir_bas)                       ~ "Opposite",
+        !is.na(dir_lum) & n_bas <= max_other                    ~ "Luminal-specific",
+        !is.na(dir_bas) & n_lum <= max_other                    ~ "Basal-specific",
+        TRUE                                                    ~ "Mixed"   # significativo in un sottotipo e parzialmente nell'altro
+      )
+    )
+}
+
+collect_gsea <- function(gsea_list) {
+  bind_rows(lapply(names(gsea_list), function(l) {
+    as.data.frame(gsea_list[[l]]) %>%
+      mutate(line = l)
+  })) %>%
+    dplyr::select(line, ID, NES, p.adjust) %>%
+    mutate(sig   = p.adjust < 0.05,
+           group = ifelse(line %in% luminal, "Luminal", "Basal"))
+}
+
+longH <- collect_gsea(gsea_H)
+longR <- collect_gsea(gsea_R)
+
+clsH <- classify(longH, lumH, basH, luminal, basal, max_other = 1)
+clsR <- classify(longR, lumR, basR, luminal, basal, max_other = 1)
+table(clsH$class); table(clsR$class)
+
+plot_heat_cls <- function(df, cls, prefix, title, wrap = 38) {
+  d <- df %>%
+    dplyr::inner_join(cls %>% dplyr::select(ID, class), by = "ID") %>%
+    dplyr::mutate(
+      ID = sub(prefix, "", ID) %>%
+        str_replace_all("_", " ") %>%
+        str_to_sentence() %>%
+        str_wrap(width = wrap),
+      class = factor(class, levels = c("Shared", "Luminal-specific",
+                                       "Basal-specific", "Opposite", "Other")),
+      group = factor(group, levels = c("Basal", "Luminal"))
+    )
+  ord <- d %>%
+    dplyr::group_by(ID) %>%
+    dplyr::summarise(m = mean(NES), .groups = "drop") %>%
+    dplyr::arrange(m)
+  d$ID <- factor(d$ID, levels = ord$ID)
+
+  ggplot(d, aes(line, ID, fill = NES)) +
+    geom_tile(color = "white", linewidth = 0.4) +
+    geom_text(data = dplyr::filter(d, sig), label = "*", size = 5, vjust = 0.75) +
+    scale_fill_gradient2(low = "#2166AC", mid = "white", high = "#B2182B",
+                         midpoint = 0, name = "NES") +
+    facet_grid(class ~ group, scales = "free", space = "free") +
+    labs(x = NULL, y = NULL, title = title, caption = "* padj < 0.05") +
+    theme_minimal(base_size = 11) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 10),
+          axis.text.y = element_text(size = 8, lineheight = 0.85),
+          panel.grid = element_blank(),
+          panel.spacing = unit(0.4, "lines"),
+          strip.text.y = element_text(angle = 0, face = "bold"),
+          strip.text.x = element_text(face = "bold"))
+}
+
+save_heat <- function(p, file_base, n_terms, n_lines, label_width = 4.5, outdir = ".") {
+  h <- max(5, 2 + 0.25 * n_terms)
+  w <- label_width + 2.5 + 0.6 * n_lines   # etichette + strip/legenda + celle
+  ggsave(file.path(outdir, paste0(file_base, ".pdf")), p,
+         width = w, height = h, limitsize = FALSE)
+  ggsave(file.path(outdir, paste0(file_base, ".png")), p,
+         width = w, height = h, dpi = 300, limitsize = FALSE)
+}
+
+outdir <- "."   
+
+p_H <- plot_heat_cls(longH, clsH, "^HALLMARK_", "Hallmark")
+p_R <- plot_heat_cls(longR, clsR, "^REACTOME_", "Reactome")
+
+save_heat(p_H, "GSEA_heatmap_Hallmark",
+          n_terms = dplyr::n_distinct(clsH$ID), n_lines = length(lines_all), outdir = outdir)
+save_heat(p_R, "GSEA_heatmap_Reactome",
+          n_terms = dplyr::n_distinct(clsR$ID),
+          n_lines = length(lines_all))
 
 ################## Cross dysregulated transcripts with dysregulated genes
 
@@ -260,7 +369,7 @@ cell_lines <- dimnames(res_up$matrice)[[2]]
 risultati_down <- conta_gene_disregolati(res_down, tab, cell_lines)
 risultati_up   <- conta_gene_disregolati(res_up,   tab, cell_lines)
 
-do.call(rbind, lapply(risultati_down, `[[`, "summary"))   # riepilogo numerico
+do.call(rbind, lapply(risultati_up, `[[`, "summary"))   # riepilogo numerico
 
 universe_tutti <- unique(unlist(lapply(tab, function(df) df$gene_id)))
 cat(length(universe_tutti), "geni nell'universe\n")
@@ -474,6 +583,59 @@ res_test <- lapply(split(d_all, list(d_all$direzione, d_all$classe_trascritto, d
   })
 do.call(rbind, res_test)
 
+######
+lfc_col <- "log2FoldChange_genes"
+
+lfc_per_tr <- function(risultati, res, tab, cell_lines, lfc_col) {
+  dplyr::bind_rows(lapply(names(risultati), function(k) {
+    r   <- risultati[[k]]
+    ids <- c(r$tr_di_geni_disreg, r$tr_non_disreg)
+
+    long <- dplyr::bind_rows(lapply(cell_lines, function(cl) {
+      presenti <- ids[ids %in% rownames(res$matrice)[res$matrice[, cl]]]
+      s <- tab[[cl]][tab[[cl]]$chrom %in% presenti, c("chrom", "gene_id", lfc_col)]
+      if (nrow(s) == 0) return(NULL)
+      names(s)[3] <- "lfc"
+      s$cell_line <- cl
+      s
+    }))
+
+    long %>%
+      dplyr::group_by(chrom, gene_id) %>%
+      dplyr::summarise(mean_lfc     = mean(lfc, na.rm = TRUE),
+                       mean_abs_lfc = mean(abs(lfc), na.rm = TRUE),
+                       n_lines      = dplyr::n(),
+                       .groups = "drop") %>%
+      dplyr::mutate(
+        classe = k,
+        gruppo = ifelse(chrom %in% r$tr_di_geni_disreg,
+                        "Dysregulated genes", "Non dysregulated genes"))
+  }))
+}
+
+df_lfc_down <- lfc_per_tr(risultati_down, res_down, tab, cell_lines, lfc_col)
+df_lfc_up <- lfc_per_tr(risultati_up, res_up, tab, cell_lines, lfc_col)
+
+# p-value Wilcoxon per classe, da annotare sul plot
+pv_down <- df_lfc_down %>%
+  dplyr::group_by(classe) %>%
+  dplyr::summarise(
+    p = tryCatch(wilcox.test(mean_abs_lfc ~ gruppo)$p.value, error = function(e) NA_real_),
+    y = max(mean_abs_lfc, na.rm = TRUE),
+    .groups = "drop") %>%
+  dplyr::mutate(label = paste0("Wilcoxon p = ", signif(p, 2)))
+
+p <- ggplot(df_lfc_down, aes(gruppo, mean_abs_lfc, fill = gruppo)) +
+  geom_boxplot(outlier.size = 0.5, width = 0.6) +
+  geom_text(data = pv_down, aes(x = 1.5, y = y, label = label), inherit.aes = FALSE, vjust = -0.5, size = 3) +
+  scale_fill_manual(values = c("Dysregulated genes" = "#B2182B", "Non dysregulated genes" = "grey70")) +
+  facet_wrap(~ classe, scales = "free_y") +
+  labs(x = NULL, y = "Mean log2FC per gene") +
+  theme_classic() +
+  theme(legend.position = "none", axis.text.x = element_text(angle = 20, hjust = 1))
+
+ggsave("boxplot_lfc_down_disreg_vs_non.pdf", p, width = 9, height = 4.5)
+
 ####################DTE per cell line
 sites_line <- function(cl, col = "m6A_diff_dmso_storm") {
   df <- tab[[cl]]
@@ -506,7 +668,6 @@ ordine                               # controlla il nuovo ordine
 sites_all$cell_line <- factor(sites_all$cell_line, levels = ordine)
 
 p <- ggplot(sites_all, aes(regulation, diff_storm, fill = cell_line)) +
-  geom_jitter(aes(colour = cell_line), width = 0.18, size = 0.5, alpha = 0.25) +
   geom_boxplot(alpha = 0.7, outlier.shape = NA, width = 0.55,
                linewidth = 0.5, colour = "black") +
   scale_fill_manual(values = palette) +
@@ -568,8 +729,6 @@ incrocia_DTU_DTE <- function(res_dtu, res_up, res_down) {
 
 riepilogo_incrocio_drimseq <- incrocia_DTU_DTE(res_DTU_drimseq, res_up, res_down)
 riepilogo_incrocio_scisorseq <- incrocia_DTU_DTE(res_DTU_scisorseq, res_up, res_down)
-
-
 
 
 

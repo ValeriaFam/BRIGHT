@@ -199,43 +199,50 @@ ggsave(
   height = 8
 )
 
-
-#Upset plot - division by subtype
+#Division of sites by type in core, basal/luminal, cell line specific, others
 luminal_cols <- c("BT483", "MCF7", "T47D")
 basal_cols   <- c("SUM159", "MDAMB231", "BT549")
+cell_cols <- c(luminal_cols, basal_cols) 
+n_lines   <- length(cell_cols)
 
-consensus_table <- consensus_table %>%
+consensus_table <- data.frame(consensus_table %>%
   mutate(
     n_luminal = rowSums(across(all_of(luminal_cols))),
     n_basal   = rowSums(across(all_of(basal_cols))),
+    n_total   = rowSums(across(all_of(cell_cols))),
+    specific_line = ifelse(
+      n_total == 1,
+      cell_cols[max.col(as.matrix(across(all_of(cell_cols))), ties.method = "first")],
+      NA_character_
+    ),
     subtype = case_when(
-      n_luminal >= 2 & n_basal == 0            ~ "Luminal",
-      n_luminal == 0 & n_basal >= 2            ~ "Basal",
-      n_luminal >= 2 & n_basal >= 2            ~ "Pancancer",
-      TRUE                                     ~ "Others"
+      n_total == n_lines                  ~ "Core",                       #in all 6
+      n_total == 1                        ~ paste0(specific_line, "_specific"),  #in one line only
+      n_luminal >= 2 & n_basal == 0       ~ "Luminal",
+      n_luminal == 0 & n_basal >= 2       ~ "Basal",
+      TRUE                                ~ "Others"                      #all the rest
     )
   ) %>%
-  dplyr::select(-n_luminal, -n_basal)
+  dplyr::select(-n_luminal, -n_basal, -n_total, -specific_line))
 
-consensus_table <- consensus_table %>%
-  mutate(
-    Luminal   = as.integer(subtype == "Luminal"),
-    Basal     = as.integer(subtype == "Basal"),
-    Pancancer = as.integer(subtype == "Pancancer"),
-    Others    = as.integer(subtype == "Others")
-  )
+write.csv(consensus_table,"ClassA_sites_divided_by_specificity.csv",row.names=FALSE)
 
-subtype_cols <- c("Luminal", "Basal", "Pancancer", "Others")
+#Check if CORE sites are on the same few transcripts
+core_fraction <- consensus_table %>%
+  group_by(chrom) %>%
+  summarise(
+    n_total = n(),                       #all sites of the transcript
+    n_core  = sum(subtype == "Core"),    #core sites
+    .groups = "drop"
+  ) %>%
+  filter(n_core > 0) %>%                 #transcripts with at least 1 core site
+  mutate(pct_core = 100 * n_core / n_total)
 
-p <- upset(
-  consensus_table,
-  subtype_cols,
-  name = "Subtype",
-  width_ratio = 0.15,
-  min_size = 1
-)
-
-ggsave("Upset_plot_m6A_subtype.pdf", p, width = 10, height = 8)
+p <- ggplot(core_fraction, aes(pct_core)) +
+  geom_histogram(binwidth = 5, boundary = 0) +
+  labs(x = "Percentage of core sites on total sites of the transcript",
+       y = "Number of transcripts")
+ggsave("Core_sites_distribution_on_the_transcript.pdf",p)
 
 #Boxplot for the number of sites/length of the transcript
 txdb <- makeTxDbFromGFF("/projects/CGS_shared/vfama/BRIGHT_PROJECT/filtered_corrected_assembly.gtf")
@@ -691,7 +698,7 @@ nuovo_ordine <- c("MCF7", "T47D", "BT483", "MDAMB231", "BT549", "SUM159")
 df_all_delta$cell_line <- factor(df_all_delta$cell_line, levels = nuovo_ordine)
 palette <- palette[nuovo_ordine]
 
-p <- ggplot(df_all_delta, aes(x = site_cat, y = log2(diff_dmso_storm/n_sites), fill = cell_line)) +
+p <- ggplot(df_all_delta, aes(x = site_cat, y = log2(diff_dmso_storm), fill = cell_line)) +
   geom_boxplot(
     outlier.size = 0.6,
     alpha = 0.7,
@@ -706,7 +713,46 @@ p <- ggplot(df_all_delta, aes(x = site_cat, y = log2(diff_dmso_storm/n_sites), f
   ) +
   theme_bw(base_size = 13)
 
-ggsave("boxplot_diff_dmso_storm_bySiteCat_log2_norm_per_site.pdf", p, width = 12, height = 8)
+ggsave("boxplot_diff_dmso_storm_bySiteCat_log2_per_site.pdf", p, width = 12, height = 8)
+
+
+#Boxplot Stoichiometry
+m6ascore_per_reg <- lapply(names(tab),function(i){
+    left_join(
+      delta_stoich_transcripts[[i]],
+      tab[[i]] %>% dplyr::select(chrom, regulation),
+      by = "chrom"
+    )
+  })
+names(m6ascore_per_reg) <- names(tab)
+
+df_box <- df_box %>%
+  dplyr::mutate(cell_line = factor(cell_line, levels = nuovo_ordine))
+
+n_lab <- df_box %>%
+  dplyr::count(cell_line, regulation) %>%
+  dplyr::mutate(label = paste0("n=", n))
+
+cols <- c("DOWN" = "#377EB8",   # blu-acciaio
+          "NS"   = "grey70",   # grigio caldo
+          "UP"   = "#E41A1C")   
+
+p <- ggplot(df_box, aes(regulation, diff_dmso_storm, fill = regulation)) +
+  geom_boxplot(outlier.size = 0.4, width = 0.65, color = "grey20", linewidth = 0.4) +
+  geom_text(data = n_lab,
+            aes(x = regulation, y = -Inf, label = label),
+            vjust = -0.5, size = 2.5, inherit.aes = FALSE) +
+  scale_fill_manual(values = cols) +
+  facet_wrap(~ cell_line, nrow = 1) +
+  labs(x = NULL, y = "diff_dmso_storm (DMSO - STORM)") +
+  theme_classic() +
+  theme(legend.position = "none",
+        strip.background = element_blank(),
+        strip.text = element_text(face = "bold"))
+
+n_cl <- length(nuovo_ordine)
+ggsave("boxplot_diff_stoich_by_regulation.pdf", p, width = 2.2 * n_cl, height = 4)
+
 
 #Scatter reduction stochiometry vs DTE
 tab_with_diff_stoich <- lapply(names(tab),function(i){

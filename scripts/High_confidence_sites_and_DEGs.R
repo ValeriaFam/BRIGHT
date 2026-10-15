@@ -54,16 +54,14 @@ mclapply(seq_along(cell_line),function(k){
 	stoichiometry_wt <- common_sites_btw_reps[,grep("percent",colnames(common_sites_btw_reps))] 
 	coverage_wt <- common_sites_btw_reps[, grep("Nvalid_cov", colnames(common_sites_btw_reps))]
 	
-	#UNIVERSO WT: tutte i siti >=20 in almeno un rep, #quanti siti 3 su 4
-	n_sites_DMSO <- sum(rowSums(stoichiometry_wt >= 20, na.rm = TRUE) >= (length(df_wt)-1)) 
+	#Define class A sites
 	row_filter <- rowSums(stoichiometry_wt >= 20, na.rm = TRUE) >= (length(df_wt)-1)
 	names_stoich_wt <- common_sites_btw_reps[row_filter, c(1:3)]
-	stoichiometry_wt <- stoichiometry_wt[row_filter, ]
-	coverage_wt <- coverage_wt[row_filter, ] 
+	stoichiometry_wt <- stoichiometry_wt[row_filter,]
+	coverage_wt <- coverage_wt[row_filter,] 
 
 	#Metto ad NA gli zero 
 	stoichiometry_wt[stoichiometry_wt==0] <- NA
-	
 	k_test_dmso <- kendall(stoichiometry_wt, correct = TRUE)
 	
 	res_kendall_dmso <- data.frame(
@@ -403,17 +401,6 @@ mclapply(seq_along(cell_line),function(k){
 	write.csv(tab_m6a_complete,paste0(path,cell_line[k],"_sites_per_transcript_and_features.csv"),row.names=TRUE)
 
 },mc.cores=n_cores)
-
-
-
-
-
-
-foe <- lapply(names(tab),function(i){
-        df <- tab[[i]]
-        table(df[grepl("ENSG00000136997",df$gene_id),]$status_gene)
-
-        })
 
 
 
