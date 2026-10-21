@@ -21,6 +21,8 @@ library("edgeR")
 library("data.table")
 library("Biostrings")
 library("BSgenome")
+library("AnnotationDbi")
+library("org.Hs.eg.db")
 
 cell_line <- c("MCF7","BT483","T47D","SUM159","MDAMB231","BT549")
 palette <- c("#CC6677","#882255","#AA4499","#117733","#999933","#44AA99")
@@ -182,140 +184,176 @@ keys_2[sites, `:=`(dist_junc = i.dist_junc, dist_up = i.dist_up, dist_down = i.d
 
 fwrite(keys_2, file.path(path, "all_sites_joined.csv"))
 
+#Insert genomic positions
+txdb <- makeTxDbFromGFF("/projects/CGS_shared/vfama/BRIGHT_PROJECT/filtered_corrected_assembly.gtf")
+exons_by_tx <- exonsBy(txdb, by = "tx", use.names = TRUE)
 
+# Tieni solo i siti di trascritti presenti nel GTF
+ok <- keys_2$chrom %in% names(exons_by_tx)
+k  <- keys_2[ok, ]
+
+# Posizione 1-based sul trascritto (vedi nota sotto)
+sites_tx <- GRanges(
+  seqnames = k$chrom,
+  ranges   = IRanges(start = k$end_position1, width = 1)
+)
+
+gen <- mapFromTranscripts(sites_tx, exons_by_tx)
+
+# xid = indice della riga di partenza
+coords <- data.frame(
+  idx        = gen$xHits,
+  genome_chr = as.character(seqnames(gen)),
+  genome_pos = start(gen),
+  strand     = as.character(strand(gen))
+)
+
+k$idx <- seq_len(nrow(k))
+k_gen <- dplyr::left_join(k, coords, by = "idx")
+
+k_gen <- k_gen[,-ncol(k_gen)]
+k_gen <- k_gen %>% dplyr::select(-idx)
+
+fwrite(k_gen, file.path(path, "all_sites_joined.csv"))
+write_xlsx(k_gen, path = "TableA.xlsx")
 ##############################################################################################
 ##############################             TABLES A        ###################################
 ##############################################################################################
-val_cols   <- c("Nvalid_cov_DMSO", "Nmod_DMSO", "Nvalid_cov_STORM", "Nmod_STORM")
-cols2      <- c("chrom", "start_position1", val_cols, "percent_modified_DMSO")
-stoich_min <- 20
-n_req_of   <- function(cl) if (cl == "T47D") 2L else 3L   # 3/4 rep, 2/3 per T47D
 
-cl_of_file  <- sub("_.*$", "", basename(names_files))
-rep_of_file <- sub("\\.csv$", "", basename(names_files))
+#Definition of m6A score
+# val_cols   <- c("Nvalid_cov_DMSO", "Nmod_DMSO", "Nvalid_cov_STORM", "Nmod_STORM")
+# cols2      <- c("chrom", "start_position1", val_cols, "percent_modified_DMSO")
+# stoich_min <- 20
+# n_req_of   <- function(cl) if (cl == "T47D") 2L else 3L   # 3/4 rep, 2/3 per T47D
 
-res <- lapply(unique(cl_of_file), function(cl) {
-  idx <- which(cl_of_file == cl)
+# cl_of_file  <- sub("_.*$", "", basename(names_files))
+# rep_of_file <- sub("\\.csv$", "", basename(names_files))
 
-  #all reps of the same line
-  d <- rbindlist(lapply(idx, function(i) {
-    x <- fread(names_files[i], select = cols2)
-    x[, chrom := sub("\\([+-]\\)$", "", chrom)]
-    x[, replicate := rep_of_file[i]]
-    x
-  }))
+# res <- lapply(unique(cl_of_file), function(cl) {
+#   idx <- which(cl_of_file == cl)
 
-  #stoichiometry DMSO >= 20
-  d[, hi := !is.na(percent_modified_DMSO) & percent_modified_DMSO >= stoich_min]
-  n_files <- length(idx)
-  keep <- d[, .(n_rep = .N, n_hi = sum(hi)), by = .(chrom, start_position1)][
-          n_rep == n_files & n_hi >= n_req_of(cl), .(chrom, start_position1)]
-  d <- d[keep, on = .(chrom, start_position1), nomatch = 0L]
+#   #all reps of the same line
+#   d <- rbindlist(lapply(idx, function(i) {
+#     x <- fread(names_files[i], select = cols2)
+#     x[, chrom := sub("\\([+-]\\)$", "", chrom)]
+#     x[, replicate := rep_of_file[i]]
+#     x
+#   }))
 
-  s <- d[, lapply(.SD, sum, na.rm = TRUE),
-         by = .(chrom, start_position1), .SDcols = val_cols]
+#   #stoichiometry DMSO >= 20
+#   d[, hi := !is.na(percent_modified_DMSO) & percent_modified_DMSO >= stoich_min]
+#   n_files <- length(idx)
+#   keep <- d[, .(n_rep = .N, n_hi = sum(hi)), by = .(chrom, start_position1)][
+#           n_rep == n_files & n_hi >= n_req_of(cl), .(chrom, start_position1)]
+#   d <- d[keep, on = .(chrom, start_position1), nomatch = 0L]
 
-  a <- s[, c(lapply(.SD, sum),
-      list(n_sites       = .N,
-           n_sites_DMSO  = sum(Nvalid_cov_DMSO  > 0),
-           n_sites_STORM = sum(Nvalid_cov_STORM > 0))),
-  by = chrom, .SDcols = val_cols]
-  a[, cell_line := cl]
+#   s <- d[, lapply(.SD, sum, na.rm = TRUE),
+#          by = .(chrom, start_position1), .SDcols = val_cols]
 
-  message("fatto: ", cl, " | siti tenuti: ", nrow(keep))
-  a
-})
+#   a <- s[, c(lapply(.SD, sum),
+#       list(n_sites       = .N,
+#            n_sites_DMSO  = sum(Nvalid_cov_DMSO  > 0),
+#            n_sites_STORM = sum(Nvalid_cov_STORM > 0))),
+#   by = chrom, .SDcols = val_cols]
+#   a[, cell_line := cl]
 
-tx_scores <- rbindlist(res)
-tx_scores[, `:=`(
-  percent_DMSO  = fifelse(Nvalid_cov_DMSO  > 0, 100 * Nmod_DMSO  / Nvalid_cov_DMSO,  NA_real_),
-  percent_STORM = fifelse(Nvalid_cov_STORM > 0, 100 * Nmod_STORM / Nvalid_cov_STORM, NA_real_)
-)]
+#   message("fatto: ", cl, " | siti tenuti: ", nrow(keep))
+#   a
+# })
 
-fwrite(tx_scores, file.path(path, "transcript_m6A_scores.csv"))
+# tx_scores <- rbindlist(res)
+# tx_scores[, `:=`(
+#   percent_DMSO  = fifelse(Nvalid_cov_DMSO  > 0, 100 * Nmod_DMSO  / Nvalid_cov_DMSO,  NA_real_),
+#   percent_STORM = fifelse(Nvalid_cov_STORM > 0, 100 * Nmod_STORM / Nvalid_cov_STORM, NA_real_)
+# )]
 
-tx_scores[, score := percent_DMSO - percent_STORM]
-tx_scores[, site_cat := fcase(
-  n_sites >= 1  & n_sites <= 2,  "1-2",
-  n_sites >= 3  & n_sites <= 4,  "3-4",
-  n_sites >= 5  & n_sites <= 10, "5-10",
-  n_sites >= 11 & n_sites <= 20, "11-20",
-  n_sites >= 21,                 "21+"
-)]
-tx_scores[, site_cat := factor(site_cat,
-                               levels = c("1-2", "3-4", "5-10", "11-20", "21+"))]
+# tx_scores[, score := percent_DMSO - percent_STORM]
+# tx_scores[, site_cat := fcase(
+#   n_sites >= 1  & n_sites <= 2,  "1-2",
+#   n_sites >= 3  & n_sites <= 4,  "3-4",
+#   n_sites >= 5  & n_sites <= 10, "5-10",
+#   n_sites >= 11 & n_sites <= 20, "11-20",
+#   n_sites >= 21,                 "21+"
+# )]
+# tx_scores[, site_cat := factor(site_cat,
+#                                levels = c("1-2", "3-4", "5-10", "11-20", "21+"))]
 
-palette <- palette[levels(tx_scores$cell_line)]
-nuovo_ordine <- c("MCF7", "T47D", "BT483", "MDAMB231", "BT549", "SUM159")
-tx_scores$cell_line <- factor(tx_scores$cell_line, levels = nuovo_ordine)
-palette <- palette[nuovo_ordine]
+# palette <- palette[levels(tx_scores$cell_line)]
+# nuovo_ordine <- c("MCF7", "T47D", "BT483", "MDAMB231", "BT549", "SUM159")
+# tx_scores$cell_line <- factor(tx_scores$cell_line, levels = nuovo_ordine)
+# palette <- palette[nuovo_ordine]
 
-p <- ggplot(tx_scores[!is.na(score) & !is.na(site_cat)],
-            aes(x = site_cat, y = score, fill = cell_line)) +
-  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey40") +
-  geom_boxplot(outlier.size = 0.6, alpha = 0.7,
-               position = position_dodge(width = 0.8)) +
-  scale_fill_manual(values = palette) +
-  labs(x = "Number of m6A per transcript",
-       y = "Score",
-       fill = "Cell line",
-       title = "Score as a function of number of site per transcript") +
-  theme_bw(base_size = 13)
-ggsave("New_deltascore_by_number_of_sites_per_transcript.pdf", p, width = 12, height = 8)
+# fwrite(tx_scores, file.path(path, "transcript_m6A_scores.csv"))
 
-p <- ggplot(tx_scores[!is.na(score) & !is.na(site_cat)],
-            aes(x = site_cat, y = percent_DMSO, fill = cell_line)) +
-  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey40") +
-  geom_boxplot(outlier.size = 0.6, alpha = 0.7,
-               position = position_dodge(width = 0.8)) +
-  scale_fill_manual(values = palette) +
-  labs(x = "Number of m6A per transcript",
-       y = "Score",
-       fill = "Cell line",
-       title = "Score as a function of number of site per transcript") +
-  theme_bw(base_size = 13)
-ggsave("New_DMSOscore_by_number_of_sites_per_transcript.pdf", p, width = 12, height = 8)
+# p <- ggplot(tx_scores[!is.na(score) & !is.na(site_cat)],
+#             aes(x = site_cat, y = score, fill = cell_line)) +
+#   geom_hline(yintercept = 0, linetype = "dashed", colour = "grey40") +
+#   geom_boxplot(outlier.size = 0.6, alpha = 0.7,
+#                position = position_dodge(width = 0.8)) +
+#   scale_fill_manual(values = palette) +
+#   labs(x = "Number of m6A per transcript",
+#        y = "Score",
+#        fill = "Cell line",
+#        title = "Score as a function of number of site per transcript") +
+#   theme_bw(base_size = 13)
+# ggsave("New_deltascore_by_number_of_sites_per_transcript.pdf", p, width = 12, height = 8)
 
-
-txdb <- makeTxDbFromGFF("/projects/CGS_shared/vfama/BRIGHT_PROJECT/filtered_corrected_assembly.gtf")
-tx_lengths_list <- exonsBy(txdb, by = "tx", use.names = TRUE)
-tx_lengths <- data.frame(
-  ensembl_transcript_id = names(tx_lengths_list),
-  transcript_length     = sum(width(tx_lengths_list))
-)
-
-tx_lengths <- as.data.table(tx_lengths)[, .(ensembl_transcript_id, transcript_length)]
-stopifnot(!anyDuplicated(tx_lengths, by = "ensembl_transcript_id"))
-tx_scores[tx_lengths, transcript_length := i.transcript_length,
-          on = c("chrom" = "ensembl_transcript_id")]
-
-p <- ggplot(tx_scores[!is.na(score) & !is.na(site_cat)],
-            aes(x = site_cat, y = score/transcript_length, fill = cell_line)) +
-  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey40") +
-  geom_boxplot(outlier.size = 0.6, alpha = 0.7,
-               position = position_dodge(width = 0.8)) +
-  scale_fill_manual(values = palette) +
-  labs(x = "Number of m6A per transcript",
-       y = "Score",
-       fill = "Cell line",
-       title = "Score as a function of number of site per transcript normalized over the length of the transcript") +
-  theme_bw(base_size = 13)
-ggsave("New_deltascore_by_number_of_sites_per_transcript_normalized.pdf", p, width = 12, height = 8)
-
-p <- ggplot(tx_scores[!is.na(score) & !is.na(site_cat)],
-            aes(x = site_cat, y = percent_DMSO/transcript_length, fill = cell_line)) +
-  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey40") +
-  geom_boxplot(outlier.size = 0.6, alpha = 0.7,
-               position = position_dodge(width = 0.8)) +
-  scale_fill_manual(values = palette) +
-  labs(x = "Number of m6A per transcript",
-       y = "Score",
-       fill = "Cell line",
-       title = "Score as a function of number of site per transcript") +
-  theme_bw(base_size = 13)
-ggsave("New_DMSOscore_by_number_of_sites_per_transcript_normalized.pdf", p, width = 12, height = 8)
+# p <- ggplot(tx_scores[!is.na(score) & !is.na(site_cat)],
+#             aes(x = site_cat, y = percent_DMSO, fill = cell_line)) +
+#   geom_hline(yintercept = 0, linetype = "dashed", colour = "grey40") +
+#   geom_boxplot(outlier.size = 0.6, alpha = 0.7,
+#                position = position_dodge(width = 0.8)) +
+#   scale_fill_manual(values = palette) +
+#   labs(x = "Number of m6A per transcript",
+#        y = "Score",
+#        fill = "Cell line",
+#        title = "Score as a function of number of site per transcript") +
+#   theme_bw(base_size = 13)
+# ggsave("New_DMSOscore_by_number_of_sites_per_transcript.pdf", p, width = 12, height = 8)
 
 
+# txdb <- makeTxDbFromGFF("/projects/CGS_shared/vfama/BRIGHT_PROJECT/filtered_corrected_assembly.gtf")
+# tx_lengths_list <- exonsBy(txdb, by = "tx", use.names = TRUE)
+# tx_lengths <- data.frame(
+#   ensembl_transcript_id = names(tx_lengths_list),
+#   transcript_length     = sum(width(tx_lengths_list))
+# )
+
+# tx_lengths <- as.data.table(tx_lengths)[, .(ensembl_transcript_id, transcript_length)]
+# stopifnot(!anyDuplicated(tx_lengths, by = "ensembl_transcript_id"))
+# tx_scores[tx_lengths, transcript_length := i.transcript_length,
+#           on = c("chrom" = "ensembl_transcript_id")]
+
+
+# p <- ggplot(tx_scores[!is.na(score) & !is.na(site_cat)],
+#             aes(x = site_cat, y = score/transcript_length, fill = cell_line)) +
+#   geom_hline(yintercept = 0, linetype = "dashed", colour = "grey40") +
+#   geom_boxplot(outlier.size = 0.6, alpha = 0.7,
+#                position = position_dodge(width = 0.8)) +
+#   scale_fill_manual(values = palette) +
+#   labs(x = "Number of m6A per transcript",
+#        y = "Score",
+#        fill = "Cell line",
+#        title = "Score as a function of number of site per transcript normalized over the length of the transcript") +
+#   theme_bw(base_size = 13)
+# ggsave("New_deltascore_by_number_of_sites_per_transcript_normalized.pdf", p, width = 12, height = 8)
+
+# p <- ggplot(tx_scores[!is.na(score) & !is.na(site_cat)],
+#             aes(x = site_cat, y = percent_DMSO/transcript_length, fill = cell_line)) +
+#   geom_hline(yintercept = 0, linetype = "dashed", colour = "grey40") +
+#   geom_boxplot(outlier.size = 0.6, alpha = 0.7,
+#                position = position_dodge(width = 0.8)) +
+#   scale_fill_manual(values = palette) +
+#   labs(x = "Number of m6A per transcript",
+#        y = "Score",
+#        fill = "Cell line",
+#        title = "Score as a function of number of site per transcript") +
+#   theme_bw(base_size = 13)
+# ggsave("New_DMSOscore_by_number_of_sites_per_transcript_normalized.pdf", p, width = 12, height = 8)
+
+
+#Making the table
+tx_scores <- read.table("transcript_m6A_scores.csv",sep=",",header=TRUE)
 
 HC_sites_names <- list.files(path=path,pattern="_sites_per_transcript_and_features.csv",recursive=TRUE)
 HC_sites <- lapply(HC_sites_names,function(i){
@@ -323,29 +361,44 @@ HC_sites <- lapply(HC_sites_names,function(i){
        })
 names(HC_sites) <- sapply(strsplit(HC_sites_names, "/"), `[`, 1)
 
-tx_len <- data.table(chrom = names(txs_seqs),
-                     len_kb = width(txs_seqs) / 1000)
+merged_list <- imap(HC_sites, function(df, cl) {
 
-tx_feat <- keys_2[, .(n_sites = .N,
-                      n_DRACH = sum(DRACH, na.rm = TRUE),
-                      n_A     = sum(class == "A"),
-                      n_B     = sum(class == "B")),
-                  by = chrom]
+  # 1. Select columns from HC_sites
+  base <- df %>%
+    dplyr::select(chrom, gene_id, starts_with("TMP_"),m6A_start_positions,m6A_stoich_dmso_mean,m6A_diff_dmso_storm)   # prende tutti i TMP_*_DMSO_*
 
-tx_feat <- merge(tx_len, tx_feat, by = "chrom", all.x = TRUE)
+  # 2. Takes rows of that cell line from the second df
+  m6a <- tx_scores %>%
+    filter(cell_line == cl) %>%
+    transmute(
+      chrom,
+      m6a_load   = n_sites,
+      m6a_score  = percent_DMSO,
+      m6a_score_kb = percent_DMSO / (transcript_length / 1000),
+      delta_score  = score,
+      tx_length = transcript_length
+    )
 
-stoich_min <- 20
-for (cl in cell_line) {
-  pct_cols <- grep(paste0("^percent_modified_DMSO_", cl, "_Rep"), names(keys_2), value = TRUE)
-  n_req    <- if (cl == "T47D") 2L else 3L
-  stopifnot(length(pct_cols) == if (cl == "T47D") 3L else 4L)   
+  # 3. Merge by chrom
+  base %>%
+    inner_join(m6a, by = "chrom") %>%   # left_join se vuoi tenere anche i trascritti senza m6A
+    mutate(cell_line = cl)
+})
 
-  n_hi <- rowSums(as.matrix(keys_2[, ..pct_cols]) >= stoich_min, na.rm = TRUE)
-  set(keys_2, j = paste0("class_", cl), value = fifelse(n_hi >= n_req, "A", "B"))
-}
+merged_list <- map(merged_list, function(df) {
+  df %>%
+    mutate(gene_id_clean = sub("\\..*$", "", gene_id),
+           gene_name = mapIds(org.Hs.eg.db,
+                              keys = gene_id_clean,
+                              column = "SYMBOL",
+                              keytype = "ENSEMBL",
+                              multiVals = "first")) %>%
+    dplyr::select(-gene_id_clean)
+})
+saveRDS(merged_list, file = "TableB.rds")
 
+write_xlsx(merged_list, path = "TableB.xlsx")
 
-
-
-
+#import external_dataset.R to see BC relevant genes
+load("scripts/external_datasets.R")
 
