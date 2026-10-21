@@ -253,7 +253,8 @@ mclapply(seq_along(cell_line),function(k){
 	gene_counts_stm <- read.table(paste0("/projects/CGS_shared/vfama/BRIGHT_PROJECT/IsoQuant_BRIGHT/",cell_line[k],"_STM/",cell_line[k],"_STM.gene_grouped_counts.tsv"),header=TRUE)
 
 	#Run DESeq2 on transcript raw counts
-	tr_counts <- inner_join(tr_counts_dmso,tr_counts_stm,by="gene_id")
+	tr_counts <- full_join(tr_counts_dmso,tr_counts_stm,by="gene_id")
+	tr_counts[is.na(tr_counts)] <- 0
 	rownames(tr_counts) <- tr_counts$gene_id
 	tr_counts <- tr_counts[,-1]
 
@@ -337,7 +338,8 @@ mclapply(seq_along(cell_line),function(k){
 	m6a_table_with_features_complete <- left_join(m6a_table_with_features, gtf_df,by = c("chrom" = "transcript_id"))
 
 	### DESeq2 and volcano on gene counts
-	gene_counts <- inner_join(gene_counts_dmso,gene_counts_stm,by="gene_id")
+	gene_counts <- full_join(gene_counts_dmso,gene_counts_stm,by="gene_id")
+	gene_counts[is.na(gene_counts)] <- 0
 	rownames(gene_counts) <- gene_counts$gene_id
 	gene_counts <- gene_counts[,-1]
 	
