@@ -70,38 +70,48 @@ keys_2[classA_dt, Classification := i.subtype, on = c("chrom", "start_position1"
 keys_2[, class := fifelse(is.na(Classification), "B", "A")]
 
 #Divide cell line specific sites in methylation driven or transcript driven
-cov_min    <- 20L     
-stoich_max <- 20      
-n_low_req  <- function(cl) if (cl == "T47D") 1L else 2L
+cov_min    <- 20L
+stoich_max <- 20
 
-idx <- keys_2[class == "A" & grepl("_specific$", Classification), which = TRUE] #subset on class A sites
+groups <- list(
+  Basal   = c("MDAMB231", "SUM159","BT549"),   
+  Luminal = c("MCF7", "T47D","BT483")           
+)
+
+idx <- keys_2[class == "A" &
+              (grepl("_specific$", Classification) |
+               Classification %in% names(groups)), which = TRUE]
 sp  <- keys_2[idx]
 sp[, own := sub("_specific$", "", Classification)]
 
-nocov_m <- low_m <- matrix(FALSE, nrow(sp), length(cell_line),
-                           dimnames = list(NULL, cell_line))
-for (cl in cell_line) {
-  cov_cols <- grep(paste0("^Nvalid_cov_DMSO_", cl, "_Rep"), names(sp), value = TRUE)
-  pct_cols <- sub("^Nvalid_cov_DMSO", "percent_modified_DMSO", cov_cols)
-  cov <- as.matrix(sp[, ..cov_cols]); pct <- as.matrix(sp[, ..pct_cols])
+members_of <- function(own) if (own %in% names(groups)) groups[[own]] else own
 
-  cov_ok <- !is.na(cov) & cov >= cov_min
-  low    <- cov_ok & !is.na(pct) & pct < stoich_max
+classify_site <- function(i) {
+  oth <- setdiff(cell_line, members_of(sp$own[i]))
 
-  nocov_m[, cl] <- rowSums(cov_ok) == 0
-  low_m[, cl]   <- rowSums(low) >= n_low_req(cl)
+  cov_all <- c(); pct_all <- c()
+  for (cl in oth) {
+    cov_cols <- grep(paste0("^Nvalid_cov_DMSO_", cl, "_Rep"), names(sp), value = TRUE)
+    pct_cols <- sub("^Nvalid_cov_DMSO", "percent_modified_DMSO", cov_cols)
+    cov_all  <- c(cov_all, unlist(sp[i, ..cov_cols]))
+    pct_all  <- c(pct_all, unlist(sp[i, ..pct_cols]))
+  }
+
+  all_nocov <- all(is.na(cov_all) | cov_all < cov_min)
+  all_low   <- all(!is.na(cov_all) & cov_all >= cov_min &
+                   !is.na(pct_all) & pct_all < stoich_max)
+
+  if (all_low) "methylation_driven"
+  else if (all_nocov) "transcript_driven"
+  else "mixed"
 }
 
-own_m <- outer(sp$own, cell_line, "==")
-n_other <- length(cell_line) - 1L
+sp[, specific_type := vapply(seq_len(.N), classify_site, character(1))]
 
-all_low   <- rowSums(low_m   & !own_m) == n_other
-all_nocov <- rowSums(nocov_m & !own_m) == n_other
-
-sp[, specific_type := fifelse(all_low, "methylation_driven",
-                      fifelse(all_nocov, "transcript_driven", "mixed"))]
 keys_2[, specific_type := NA_character_]
 keys_2[idx, specific_type := sp$specific_type]
+
+table(keys_2$Classification[idx], keys_2$specific_type[idx])
 
 #Attach gene_id and gene_type
 gtf <- import("/projects/CGS_shared/vfama/BRIGHT_PROJECT/filtered_corrected_assembly.gtf")
