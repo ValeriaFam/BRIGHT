@@ -29,6 +29,7 @@ cell_line <- c("MCF7","BT483","T47D","SUM159","MDAMB231","BT549")
 palette <- c(MCF7="#CC6677",BT483="#882255",T47D="#AA4499",SUM159="#117733",MDAMB231="#999933",BT549="#44AA99")
 luminal <- cell_line[1:3]
 basal <- cell_line[4:6]
+path <-  "/projects/CGS_shared/vfama/BRIGHT_PROJECT/"
 
 #Read the tables
 names_tab <- list.files(path=".",pattern="sites_per_transcript_and_features.csv",recursive=TRUE)
@@ -36,6 +37,19 @@ tab <- lapply(names_tab,function(i){
 		read.csv(i,header=TRUE)
 	})
 names(tab) <- gsub(".*/([A-Za-z0-9]+)_.*\\.csv$", "\\1", names_tab)
+
+#Genes and transcripts not tested are NAs -> renamed in not tested
+recode_na <- function(x, new = "not_tested") {
+  x <- as.character(x)
+  x[is.na(x)] <- new
+  factor(x, levels = c("UP", "DOWN", "NS", new))
+}
+
+tab <- lapply(tab, function(df) {
+  df$regulation   <- recode_na(df$regulation)
+  df$status_genes <- recode_na(df$status_genes)
+  df
+})
 
 #Extract up and down regulated transcripts
 get_transcripts <- function(df, status) {
@@ -46,10 +60,87 @@ down_tr <- lapply(tab[cell_line], get_transcripts, status = "DOWN")
 
 #Extract up and down regulated genes
 get_genes_disreg <- function(df) {
-  unique(df$gene_id[df$status_genes != "NS"])
+  unique(df$gene_id[df$status_genes == "UP" | df$status_genes == "DOWN" ])
 }
 disreg_genes   <- lapply(tab[cell_line], get_genes_disreg)
 
+### Do scatter plots DGE/DTE
+plot_scatter <- function(df, title) {
+  ggplot(df, aes(x = x, y = y)) +
+    geom_point(alpha = 0.4, size = 1) +
+    geom_vline(xintercept = -log10(0.05), linetype = "dashed", linewidth = 0.4) +
+    geom_hline(yintercept = -log10(0.05), linetype = "dashed", linewidth = 0.4) +
+    coord_cartesian(xlim = c(0, 100), ylim = c(0, 100)) +
+    labs(title = title, x = "-log10(padj) DTE", y = "-log10(padj) DGE") +
+    theme_classic(base_size = 13)
+}
+
+for (cl in names(tab)) {
+  df <- tab[[cl]] %>%
+    filter(!is.na(p.val), !is.na(padj_genes)) %>%     # solo trascritti E geni testati
+    distinct(chrom, gene_id, p.val, padj_genes) %>%   # evita righe duplicate da join
+    mutate(
+      x = -log10(pmax(p.val, 1e-300)),
+      y = -log10(pmax(padj_genes, 1e-300))
+    )
+
+  p <- plot_scatter(df, paste0(cl, " - DGE vs DTE (trascritti con m6A)"))
+  ggsave(paste0(path, cl, "_DGE_vs_DTE.pdf"), p, width = 6, height = 5)
+}
+
+## Barplot on DTE in DGE and viceversa
+all_df <- bind_rows(tab, .id = "cell_line")
+
+# 2. DTE: quanti sono anche DGE? (unità = trascritti) ----------------------
+dte_df <- all_df %>%
+  filter(regulation %in% c("UP", "DOWN"), status_genes != "not_tested") %>%
+  mutate(DGE = ifelse(status_genes %in% c("UP", "DOWN"),
+                      "Also DGE", "Not DGE")) %>%
+  dplyr::count(cell_line, DGE) %>%
+  group_by(cell_line) %>%
+  mutate(perc = 100 * n / sum(n))
+
+dte_df <- dte_df %>%
+  mutate(DGE = factor(DGE, levels = c("Not DGE", "Also DGE")))
+
+p1 <- ggplot(dte_df, aes(x = cell_line, y = perc, fill = DGE)) +
+  geom_col(width = 0.7) +
+  geom_text(aes(label = sprintf("%.1f%%", perc)),
+            position = position_stack(vjust = 0.5), size = 3.5) +
+  scale_fill_manual(values = c("Also DGE" = "#984EA3", "Not DGE" = "grey70")) +
+  labs(x = NULL, y = "% of DTEs", fill = NULL,
+       title = "DTEs that are also DGEs") +
+  theme_classic(base_size = 13)
+
+ggsave(paste0(path, "_DTE_with_DGE_perc.pdf"), p1, width = 6, height = 5)
+
+# 3. DGE: quanti sono anche DTE? (unità = geni) ---------------------------
+# un gene è "DTE" se almeno un suo trascritto è DTE
+dge_df <- all_df %>%
+  filter(status_genes %in% c("UP", "DOWN")) %>%               # solo DGE
+  group_by(cell_line, gene_id) %>%
+  summarise(tested  = any(regulation != "not_tested"),        # almeno un trascritto testato
+            has_DTE = any(regulation %in% c("UP", "DOWN")),   # almeno un trascritto DTE
+            .groups = "drop") %>%
+  filter(tested) %>%                                          # escludo i geni mai testati a livello di trascritto
+  mutate(DTE = factor(ifelse(has_DTE, "Also DTE", "Not DTE"),
+                      levels = c("Not DTE", "Also DTE"))) %>% # primo livello = in cima
+  dplyr::count(cell_line, DTE) %>%
+  group_by(cell_line) %>%
+  mutate(perc = 100 * n / sum(n))
+
+dge_df <- dge_df %>%
+  mutate(DTE = factor(DTE, levels = c("Not DTE", "Also DTE")))
+
+p2 <- ggplot(dge_df, aes(x = cell_line, y = perc, fill = DTE)) +
+  geom_col(width = 0.7) +
+  geom_text(aes(label = sprintf("%.1f%%", perc)),
+            position = position_stack(vjust = 0.5), size = 3.5) +
+  scale_fill_manual(values = c("Also DTE" = "#984EA3", "Not DTE" = "grey70")) +
+  labs(x = NULL, y = "% of DGEs", fill = NULL,
+       title = "DGEs that are also DTEs") +
+  theme_classic(base_size = 13)
+  ggsave(paste0(path, "_DGE_with_DTE_perc.pdf"), p2, width = 6, height = 5)
 ############### How many disregulated genes for luminal/basal?
 ###Gene Ontology
 GO_on_subtype <- function(subtype)
