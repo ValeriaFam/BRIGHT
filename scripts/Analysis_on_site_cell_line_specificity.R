@@ -22,6 +22,7 @@ library("patchwork")
 library("clusterProfiler")
 library("org.Hs.eg.db")
 library("scales")
+library("readxl")
 
 cell_line <- c("MCF7","BT483","T47D","SUM159","MDAMB231","BT549")
 palette <- c(MCF7="#CC6677",BT483="#882255",T47D="#AA4499",SUM159="#117733",MDAMB231="#999933",BT549="#44AA99")
@@ -880,4 +881,68 @@ lapply(names(GO), function(k){
   }
 })
 
+############################################################################
+df <- read_excel("TableA_subset.xlsx")
+core_sites <- df %>% dplyr::filter(Classification == "Core") %>% select(-contains("Nvalid_cov"))
 
+gtf <- import("/projects/CGS_shared/vfama/BRIGHT_PROJECT/filtered_corrected_assembly.gtf")
+gtf_df <- as.data.frame(gtf) %>%
+    filter(type == "transcript") %>%
+    dplyr::select(transcript_id, gene_id,gene_type,transcript_type,gene_name) %>%
+    distinct()
+
+m6a_scores <- read.table("transcript_m6A_scores.csv",sep=",",header=TRUE)
+m6a_scores <- m6a_scores %>%
+  mutate(subtype = ifelse(cell_line %in% basal_cols, "Basal", "Luminal"),
+         transcript = .data[["chrom"]])
+
+n_lines <- n_distinct(m6a_scores$cell_line)
+
+shared <- m6a_scores %>%
+  group_by(transcript) %>%
+  filter(n_distinct(cell_line) == n_lines) %>%
+  ungroup()
+
+cat(n_distinct(shared$transcript), "trascritti presenti in tutte le", n_lines, "linee\n") #7808 transcripts
+
+paired <- shared %>%
+  group_by(transcript, subtype) %>%
+  summarise(percent_DMSO = mean(percent_DMSO, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = subtype, values_from = percent_DMSO)
+paired$diff <- paired$Basal - paired$Luminal
+paired <- left_join(paired,gtf_df,by=c("transcript"="transcript_id"))
+paired$gene_id <- sub("\\.\\d+$", "",paired$gene_id)
+sub <- subset(paired, abs(diff) > 10) 
+
+p <- wilcox.test(paired$Basal, paired$Luminal, paired = TRUE)$p.value
+p_label <- paste0("Wilcoxon paired, p ",
+                  ifelse(p < 2.2e-16, "< 2.2e-16", paste("=", signif(p, 3))))
+cat("Differenza mediana appaiata (Basal - Luminal):",
+    median(paired$Basal - paired$Luminal, na.rm = TRUE), "\n")
+
+## 4. Plot
+plot_df <- pivot_longer(paired, c(Basal, Luminal),
+                        names_to = "subtype", values_to = "percent_DMSO")
+
+plot <- ggplot(plot_df, aes(x = subtype, y = percent_DMSO, fill = subtype)) +
+  geom_boxplot(outlier.shape = NA, alpha = 0.7) +
+  annotate("text", x = 1.5, y = max(plot_df$percent_DMSO, na.rm = TRUE),
+           label = p_label, vjust = -0.5) +
+  labs(x = NULL, y = "% modified (DMSO)",
+       subtitle = paste(nrow(paired), "shared transcripts")) +
+  theme_classic() +
+  theme(legend.position = "none")
+
+ego <- enrichGO(gene = unique(sub$gene_id[sub$gene_type == "protein_coding"]),
+                universe = unique(paired$gene_id[paired$gene_type == "protein_coding"]),
+                OrgDb = org.Hs.eg.db, keyType = "ENSEMBL",
+                ont = "BP", pAdjustMethod = "BH",
+                pvalueCutoff = 0.05, qvalueCutoff = 0.1,
+                readable = TRUE)
+sum(ego@result$p.adjust < 0.05) 
+
+core_only_tx <- df %>%
+  group_by(chrom) %>%
+  summarise(only_core = all(Classification == "Core"), .groups = "drop") %>%
+  filter(only_core) %>%
+  pull(chrom)
