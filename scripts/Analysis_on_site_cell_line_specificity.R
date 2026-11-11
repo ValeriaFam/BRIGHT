@@ -882,8 +882,11 @@ lapply(names(GO), function(k){
 })
 
 ############################################################################
-df <- read_excel("TableA_subset.xlsx")
-core_sites <- df %>% dplyr::filter(Classification == "Core") %>% select(-contains("Nvalid_cov"))
+######################### Score across subtypes    #########################
+############################################################################
+df <- as.data.frame(read_excel("TableA_subset.xlsx"))
+luminal_cols <- c("BT483", "MCF7", "T47D")
+basal_cols   <- c("SUM159", "MDAMB231", "BT549")
 
 gtf <- import("/projects/CGS_shared/vfama/BRIGHT_PROJECT/filtered_corrected_assembly.gtf")
 gtf_df <- as.data.frame(gtf) %>%
@@ -897,7 +900,6 @@ m6a_scores <- m6a_scores %>%
          transcript = .data[["chrom"]])
 
 n_lines <- n_distinct(m6a_scores$cell_line)
-
 shared <- m6a_scores %>%
   group_by(transcript) %>%
   filter(n_distinct(cell_line) == n_lines) %>%
@@ -907,8 +909,8 @@ cat(n_distinct(shared$transcript), "trascritti presenti in tutte le", n_lines, "
 
 paired <- shared %>%
   group_by(transcript, subtype) %>%
-  summarise(percent_DMSO = mean(percent_DMSO, na.rm = TRUE), .groups = "drop") %>%
-  pivot_wider(names_from = subtype, values_from = percent_DMSO)
+  summarise(score = mean(score, na.rm = TRUE), .groups = "drop") %>%
+  pivot_wider(names_from = subtype, values_from = score)
 paired$diff <- paired$Basal - paired$Luminal
 paired <- left_join(paired,gtf_df,by=c("transcript"="transcript_id"))
 paired$gene_id <- sub("\\.\\d+$", "",paired$gene_id)
@@ -922,16 +924,17 @@ cat("Differenza mediana appaiata (Basal - Luminal):",
 
 ## 4. Plot
 plot_df <- pivot_longer(paired, c(Basal, Luminal),
-                        names_to = "subtype", values_to = "percent_DMSO")
+                        names_to = "subtype", values_to = "score")
 
-plot <- ggplot(plot_df, aes(x = subtype, y = percent_DMSO, fill = subtype)) +
+plot <- ggplot(plot_df, aes(x = subtype, y = score, fill = subtype)) +
   geom_boxplot(outlier.shape = NA, alpha = 0.7) +
-  annotate("text", x = 1.5, y = max(plot_df$percent_DMSO, na.rm = TRUE),
+  annotate("text", x = 1.5, y = max(plot_df$score, na.rm = TRUE),
            label = p_label, vjust = -0.5) +
-  labs(x = NULL, y = "% modified (DMSO)",
+  labs(x = NULL, y = "score",
        subtitle = paste(nrow(paired), "shared transcripts")) +
   theme_classic() +
   theme(legend.position = "none")
+
 
 ego <- enrichGO(gene = unique(sub$gene_id[sub$gene_type == "protein_coding"]),
                 universe = unique(paired$gene_id[paired$gene_type == "protein_coding"]),
@@ -946,3 +949,131 @@ core_only_tx <- df %>%
   summarise(only_core = all(Classification == "Core"), .groups = "drop") %>%
   filter(only_core) %>%
   pull(chrom)
+
+run_shuffle <- function(df, label = "") {
+
+  agg <- df %>%
+    filter(!is.na(score)) %>%
+    group_by(transcript, cell_line) %>%
+    summarise(S = sum(score), N = n(), .groups = "drop")
+
+  S <- agg %>% dplyr::select(transcript, cell_line, S) %>%
+    pivot_wider(names_from = cell_line, values_from = S, values_fill = 0)
+  N <- agg %>% dplyr::select(transcript, cell_line, N) %>%
+    pivot_wider(names_from = cell_line, values_from = N, values_fill = 0)
+
+  tx <- S$transcript
+  S <- as.matrix(S[, -1]); rownames(S) <- tx
+  N <- as.matrix(N[match(tx, N$transcript), colnames(S)]); rownames(N) <- tx
+  lines_all <- colnames(S)
+
+  delta_vec <- function(grpA, grpB) {
+    rowSums(S[, grpA, drop = FALSE]) / rowSums(N[, grpA, drop = FALSE]) -
+    rowSums(S[, grpB, drop = FALSE]) / rowSums(N[, grpB, drop = FALSE])
+  }
+
+  # osservato
+  d_obs <- delta_vec(basal_cols, luminal_cols)
+  obs_n <- sum(abs(d_obs) > thr, na.rm = TRUE)
+  cat(label, "- trascritti:", nrow(S), "| osservato (|delta| >", thr, "):", obs_n, "\n")
+
+  # shuffle: 10 split 3 vs 3 distinti
+  splits <- Filter(function(s) lines_all[1] %in% s, combn(lines_all, 3, simplify = FALSE))
+
+  perm_res <- bind_rows(lapply(splits, function(s) {
+    other <- setdiff(lines_all, s)
+    d <- delta_vec(s, other)
+    tibble(group_A = paste(s, collapse = "+"),
+           group_B = paste(other, collapse = "+"),
+           n_delta = sum(abs(d) > thr, na.rm = TRUE),
+           frac_delta = mean(abs(d) > thr, na.rm = TRUE),   # frazione sui trascritti del set
+           is_real = setequal(s, basal_cols) || setequal(s, luminal_cols))
+  })) %>% arrange(desc(n_delta))
+
+  cat("Rank split reale:", which(perm_res$is_real), "su", nrow(perm_res), "\n")
+
+  # p <- ggplot(perm_res, aes(reorder(group_A, n_delta), n_delta, fill = is_real)) +
+  #   geom_col() + coord_flip() +
+  #   scale_fill_manual(values = c("FALSE" = "grey70", "TRUE" = "firebrick"),
+  #                     labels = c("Shuffle", "Basal vs Luminal"), name = NULL) +
+  #   labs(title = label, x = "Gruppo A (vs le altre 3 linee)",
+  #        y = paste0("N trascritti con |delta score| > ", thr)) +
+  #   theme_classic()
+
+  list(perm_res = perm_res, plot = p, obs_n = obs_n, n_tx = nrow(S))
+}
+
+# --- 1. Set completo (controllo: obs deve essere 292) ---
+res_all <- run_shuffle(shared, "Tutti i trascritti")
+stopifnot(res_all$obs_n == nrow(sub))
+
+
+#Metagene for lncRNA
+cell_line <- c("MCF7","BT483","T47D","SUM159","MDAMB231","BT549")
+palette <- c("#CC6677","#882255","#AA4499","#117733","#999933","#44AA99")
+n_cores <- 1
+gtf <- import("/projects/CGS_shared/vfama/BRIGHT_PROJECT/filtered_corrected_assembly.gtf")
+txdb <- makeTxDbFromGFF("/projects/CGS_shared/vfama/BRIGHT_PROJECT/filtered_corrected_assembly.gtf")
+
+gtf_df <- as.data.frame(import("filtered_corrected_assembly.gtf"))
+lnc_ids <- gtf_df %>%
+  filter(type == "transcript", .data[["transcript_type"]] == "protein_coding") %>%
+  pull(transcript_id) #14678
+
+nc_lengths <- gtf_df %>%
+  filter(type == "exon", transcript_id %in% lnc_ids) %>%
+  group_by(transcript_id) %>%
+  summarise(tx_len = sum(width), .groups = "drop")
+
+mclapply(seq_along(cell_line),function(k){
+
+    path <-  paste0("/projects/CGS_shared/vfama/BRIGHT_PROJECT/",cell_line[k],"/")
+    names_files <- list.files(path=path,pattern="Rep.*\\.csv$")
+
+  common_sites_btw_reps_all <- read.csv(paste0(path,"High_condifence_sites.csv"),header=TRUE)
+
+common_sites_btw_reps_all$chrom <- sub("\\([+-]\\)$", "", common_sites_btw_reps_all$chrom)
+
+df_sites_nc <- common_sites_btw_reps_all %>%
+  inner_join(nc_lengths, by = c("chrom" = "transcript_id")) %>%
+  filter(start_position1 >= 1, start_position1 <= tx_len) %>%
+  mutate(norm_position = start_position1 / tx_len)
+
+cat("Siti su lncRNA:", nrow(df_sites_nc), "\n")
+
+df_density_nc <- bind_rows(
+  df_sites_nc %>%
+    dplyr::select(norm_position, matches("percent_modified.*DMSO")) %>%
+    pivot_longer(-norm_position, names_to = "sample", values_to = "pct") %>%
+    filter(!is.na(pct)) %>%
+    mutate(treatment = "DMSO"),
+
+  df_sites_nc %>%
+    dplyr::select(norm_position, matches("percent_modified.*STORM")) %>%
+    pivot_longer(-norm_position, names_to = "sample", values_to = "pct") %>%
+    filter(!is.na(pct)) %>%
+    mutate(treatment = "STORM")
+)
+
+p_lnc <- ggplot(df_density_nc, aes(x = norm_position, color = treatment, linetype = treatment)) +
+  # replicati: una curva per campione, sottile e trasparente
+  geom_line(aes(group = sample), stat = "density", adjust = 0.5,
+            linewidth = 0.5, alpha = 0.35) +
+  # curva per trattamento: replicati uniti, spessa
+  geom_line(aes(group = treatment), stat = "density", adjust = 0.5,
+            linewidth = 1.3) +
+  scale_linetype_manual(values = c("DMSO" = "solid", "STORM" = "dashed")) +
+  scale_color_manual(values = c("DMSO" = "blue", "STORM" = "red")) +
+  scale_x_continuous(
+    breaks = c(0, 0.5, 1),
+    labels = c("5' end", "middle", "3' end"),
+    limits = c(0, 1)
+  ) +
+  labs(x = "", y = "m6A site density",
+       title = "lncRNA",
+       color = "Treatment", linetype = "Treatment") +
+  theme_classic() +
+  theme(axis.text.x = element_text(size = 12, face = "bold"))
+
+ggsave(paste0("Metagene_pc_",cell_line[k],".pdf"),p_lnc)
+})
