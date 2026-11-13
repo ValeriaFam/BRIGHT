@@ -307,13 +307,13 @@ mclapply(seq_along(cell_line),function(k){
 	    color = "Status"
 	  ) +
 	  theme_classic(base_size = 13)
-	ggsave(filename=paste0(path,cell_line[k],"_Volcano_plot_on_transcript.pdf"),volcano)
+	#ggsave(filename=paste0(path,cell_line[k],"_Volcano_plot_on_transcript.pdf"),volcano)
 
 
 	### Build the table
 	common_sites_btw_reps_all <- read.csv(paste0(path,"High_condifence_sites.csv"),header=TRUE)
 	m6a_table <- common_sites_btw_reps_all
-	m6a_table$chrom <- gsub("\\([+-]\\)$", "", m6a_table$chrom)
+	#m6a_table$chrom <- gsub("\\([+-]\\)$", "", m6a_table$chrom)
 	m6a_table <- m6a_table %>%
 	  rowwise() %>%
 	  mutate(
@@ -399,7 +399,7 @@ mclapply(seq_along(cell_line),function(k){
 	    color = "Status"
 	  ) +
 	  theme_classic(base_size = 13)
-	ggsave(paste0(path,cell_line[k],"_Volcano_plot_on_genes.pdf"),volcano_genes)
+	#ggsave(paste0(path,cell_line[k],"_Volcano_plot_on_genes.pdf"),volcano_genes)
 
 	#Faccio il join con la tabella degli high confidence
 	colnames(res_df_genes) <- paste0(colnames(res_df_genes),"_genes")
@@ -410,7 +410,7 @@ mclapply(seq_along(cell_line),function(k){
  	   ifelse(is.na(status_genes), "not_tested", as.character(status_genes)),
  	   levels = c("UP", "DOWN", "NS", "not_tested")
  	 ))
-	write.csv(tab_m6a_complete,paste0(path,cell_line[k],"_sites_per_transcript_and_features.csv"),row.names=TRUE)
+	write.csv(tab_m6a_complete,paste0(path,cell_line[k],"_sites_per_transcript_and_features_sign.csv"),row.names=TRUE)
 
 },mc.cores=n_cores)
 

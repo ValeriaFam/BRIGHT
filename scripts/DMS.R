@@ -46,9 +46,17 @@ lst <- lapply(bedMethylFiles, read_one)
 names(lst) <- metadata$sample_id
 sites <- Reduce(union, lapply(lst, `[[`, "site")) #collect all the unique sites
 
+HCS_names <-list.files(path="./",pattern="High_condifence_sites.csv",recursive=TRUE)
+HCS <- lapply(HCS_names,function(i){
+    foe <- read.csv(i,header=TRUE)
+    paste0(foe$chrom,":",foe$start_position1)
+  })
+names(HCS) <- sapply(strsplit(HCS_names, "/", fixed = TRUE), `[`, 1)
+HCS_sites <- Reduce(union,HCS)
+
 get_mat <- function(col) {
-  m <- sapply(lst, function(d) d[[col]][match(sites, d$site)])
-  rownames(m) <- sites
+  m <- sapply(lst, function(d) d[[col]][match(HCS_sites, d$site)])
+  rownames(m) <- HCS_sites
   m[is.na(m)] <- 0          #site absent in that rep = 0 read
   m
 } #Extract mod and unmod counts for each site
@@ -60,7 +68,7 @@ stoich <- get_mat("percent_modified")
 stopifnot(identical(colnames(counts_mod), metadata$sample_id),
           identical(dim(counts_mod), dim(counts_unmod)))
 
-message("sites in: ", nrow(counts_mod), " | libraries: ", nrow(metadata))
+message("sites in: ", nrow(counts_mod), " | libraries: ", nrow(metadata)) #211109 sites
 
 # -----------------------------------------------------------------------------
 # PARAMETERS
@@ -77,14 +85,12 @@ PAR <- list(
   fdr                 = 0.05,
   n_workers           = 4
 )
-
 # =============================================================================
 # 1.  LIBRARY-LEVEL QC   (before any per-site work)
 # =============================================================================
 # One bad library out of 24 can distort a whole cell line. Check this first:
 # the per-library global modification rate should cluster by cell line, not
 # scatter at random. An outlier library here is a basecalling or prep problem.
-
 lib_qc <- data.table(
   sample_id = metadata$sample_id,
   cell_line = metadata$cell_line,
@@ -109,68 +115,33 @@ if (length(bad_libs)) message("outlier libraries: ", paste(bad_libs, collapse = 
 # 2.  VECTORISED SITE FILTERS   (boolean, ANDed, all BEFORE any model fit)
 # =============================================================================
 # Keep sites that have coverage everywhere
-
 tot <- counts_mod + counts_unmod
 line_levels <- levels(metadata$cell_line)
 line_of_col <- as.integer(metadata$cell_line)
 
-# --- 2a. coverage: replicati usabili per linea ---
+#--- 2a. coverage: replicati usabili per linea ---
 keep_libs <- rowSums(tot >= PAR$min_reads_library) == ncol(tot) #5.7M
 
-# --- 2b. minimum cell counts, PER CELL LINE ----------------------------------
-# From the Woolf formula SE(b1) = sqrt(sum 1/cell), precision is set by the
-# SMALLEST cell. Enforcing this per line guarantees every biological replicate
-# contributes a usable estimate -- strictly better than a stoichiometry cutoff.
-# mod_line <- sapply(seq_along(line_levels), function(k)
-#   rowSums(counts_mod[, line_of_col == k, drop = FALSE]))
-# unm_line <- sapply(seq_along(line_levels), function(k)
-#   rowSums(counts_unmod[, line_of_col == k, drop = FALSE]))
-# colnames(mod_line) <- colnames(unm_line) <- line_levels
-
-# keep_cells <- rowSums(mod_line >= PAR$min_cell_per_line &
-#                       unm_line >= PAR$min_cell_per_line) == length(line_levels)
-
-# --- 2b. stechiometria >= 20 in almeno un sottotipo ---
-# luminal_cols <- c("BT483", "MCF7", "T47D")
-# basal_cols   <- c("SUM159", "MDAMB231", "BT549")
-# n_rep    <- as.vector(table(metadata$cell_line))[match(line_levels, names(table(metadata$cell_line)))]
-# min_libs <- pmax(n_rep - 1, 2)
-# idx <- which(keep_libs)
-# high <- stoich[idx, , drop = FALSE] >= 20
-
-# high_per_line <- t(rowsum(t(high) * 1, line_of_col))
-# colnames(high_per_line) <- line_levels
-# ok_high <- sweep(high_per_line, 2, min_libs, FUN = ">=")
-
-# mod_lum <- rowSums(ok_high[, luminal_cols, drop = FALSE]) >= 2
-# mod_bas <- rowSums(ok_high[, basal_cols,   drop = FALSE]) >= 2
-
-# keep <- rep(FALSE, nrow(tot))
-# keep[idx] <- mod_lum | mod_bas  
-# attrition <- data.frame(
-#   step = c("input", "coverage in tutte le librerie", "+ stoich >= 20 (>= 1 sottotipo)"),
-#   n = c(nrow(tot), sum(keep_libs), sum(keep))
-# )
-# sites <- which(keep)
+#--- 2b. stoichiometry ---
 luminal_cols <- c("BT483", "MCF7", "T47D")
 basal_cols   <- c("SUM159", "MDAMB231", "BT549")
 n_rep    <- as.vector(table(metadata$cell_line))[match(line_levels, names(table(metadata$cell_line)))]
 min_libs <- pmax(n_rep - 1, 2)
 
-# coverage: invariata
+#coverage: invariata
 idx <- which(keep_libs)
 
-# stechiometria per linea, solo sui siti con coverage ok
+#stechiometria per linea, solo sui siti con coverage ok
 high <- stoich[idx, , drop = FALSE] >= 20
 high[is.na(high)] <- FALSE
 
 high_per_line <- t(rowsum(t(high) * 1, line_of_col))
 colnames(high_per_line) <- line_levels
 
-# la linea "ha il sito" se stoich >= 20 in almeno n-1 replicati
+#la linea "ha il sito" se stoich >= 20 in almeno n-1 replicati
 has_site <- sweep(high_per_line, 2, min_libs, FUN = ">=")
 
-# massimo una linea senza il sito
+#massimo una linea senza il sito
 n_missing <- length(line_levels) - rowSums(has_site)
 
 keep <- rep(FALSE, nrow(tot))
@@ -181,7 +152,7 @@ attrition <- data.frame(
   n = c(nrow(tot), sum(keep_libs), sum(keep))
 )
 print(attrition)
-sites <- which(keep)
+sites_final <- which(keep) #32134
 # =============================================================================
 # 3.  THE MODEL
 # =============================================================================
