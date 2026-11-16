@@ -2,7 +2,7 @@
 
 #PBS -S /bin/sh
 #PBS -N High_conf_sites
-#PBS -l select=1:ncpus=4:mem=250G
+#PBS -l select=1:ncpus=6:mem=250G
 #PBS -l walltime=12:00:00
 #PBS -q longq
 

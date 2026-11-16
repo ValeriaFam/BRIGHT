@@ -186,6 +186,38 @@ The following object is masked from ‘package:BiocGenerics’:
 
     plotMA
 
+
+Attaching package: ‘data.table’
+
+The following objects are masked from ‘package:lubridate’:
+
+    hour, isoweek, isoyear, mday, minute, month, quarter, second, wday,
+    week, yday, year
+
+The following object is masked from ‘package:purrr’:
+
+    transpose
+
+The following object is masked from ‘package:SummarizedExperiment’:
+
+    shift
+
+The following object is masked from ‘package:GenomicRanges’:
+
+    shift
+
+The following object is masked from ‘package:IRanges’:
+
+    shift
+
+The following objects are masked from ‘package:S4Vectors’:
+
+    first, second
+
+The following objects are masked from ‘package:dplyr’:
+
+    between, first, last
+
 Import genomic features from the file as a GRanges object ... OK
 Prepare the 'metadata' data frame ... OK
 Make the TxDb object ... OK
@@ -195,13 +227,6 @@ Warning messages:
 2: In .get_cds_IDX(mcols0$type, mcols0$phase) :
   The "phase" metadata column contains non-NA values for features of type
   stop_codon. This information was ignored.
-converting counts to integer mode
-estimating size factors
-estimating dispersions
-gene-wise dispersion estimates
-mean-dispersion relationship
-final dispersion estimates
-fitting model and testing
 Saving 7 x 7 in image
 converting counts to integer mode
 estimating size factors
@@ -219,13 +244,7 @@ mean-dispersion relationship
 final dispersion estimates
 fitting model and testing
 Saving 7 x 7 in image
-converting counts to integer mode
-estimating size factors
-estimating dispersions
-gene-wise dispersion estimates
-mean-dispersion relationship
-final dispersion estimates
-fitting model and testing
+
 Saving 7 x 7 in image
 converting counts to integer mode
 estimating size factors
@@ -243,13 +262,7 @@ mean-dispersion relationship
 final dispersion estimates
 fitting model and testing
 Saving 7 x 7 in image
-converting counts to integer mode
-estimating size factors
-estimating dispersions
-gene-wise dispersion estimates
-mean-dispersion relationship
-final dispersion estimates
-fitting model and testing
+
 Saving 7 x 7 in image
 converting counts to integer mode
 estimating size factors
@@ -267,13 +280,7 @@ mean-dispersion relationship
 final dispersion estimates
 fitting model and testing
 Saving 7 x 7 in image
-converting counts to integer mode
-estimating size factors
-estimating dispersions
-gene-wise dispersion estimates
-mean-dispersion relationship
-final dispersion estimates
-fitting model and testing
+
 Saving 7 x 7 in image
 converting counts to integer mode
 estimating size factors
@@ -291,3 +298,40 @@ mean-dispersion relationship
 final dispersion estimates
 fitting model and testing
 Saving 7 x 7 in image
+
+Saving 7 x 7 in image
+converting counts to integer mode
+estimating size factors
+estimating dispersions
+gene-wise dispersion estimates
+mean-dispersion relationship
+final dispersion estimates
+fitting model and testing
+Saving 7 x 7 in image
+converting counts to integer mode
+estimating size factors
+estimating dispersions
+gene-wise dispersion estimates
+mean-dispersion relationship
+final dispersion estimates
+fitting model and testing
+Saving 7 x 7 in image
+
+Saving 7 x 7 in image
+converting counts to integer mode
+estimating size factors
+estimating dispersions
+gene-wise dispersion estimates
+mean-dispersion relationship
+final dispersion estimates
+fitting model and testing
+Saving 7 x 7 in image
+converting counts to integer mode
+estimating size factors
+estimating dispersions
+gene-wise dispersion estimates
+mean-dispersion relationship
+final dispersion estimates
+fitting model and testing
+Saving 7 x 7 in image
+
