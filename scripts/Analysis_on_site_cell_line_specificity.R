@@ -28,7 +28,7 @@ cell_line <- c("MCF7","BT483","T47D","SUM159","MDAMB231","BT549")
 palette <- c(MCF7="#CC6677",BT483="#882255",T47D="#AA4499",SUM159="#117733",MDAMB231="#999933",BT549="#44AA99")
 
 #Read the tables
-names_tab <- list.files(path=".",pattern="sites_per_transcript_and_features.csv",recursive=TRUE)
+names_tab <- list.files(path=".",pattern="sites_per_transcript_and_features_new.csv",recursive=TRUE)
 tab <- lapply(names_tab,function(i){
 		read.csv(i,header=TRUE)
 	})
@@ -142,64 +142,6 @@ coverage_df <- coverage_df %>% #è stata scalata
 coverage_lookup <- coverage_df$coverage_scaled
 names(coverage_lookup) <- coverage_df$cell_line
 
-
-final_plot <- ComplexUpset::upset(
-  consensus_table,
-  intersect = cell_lines,
-  sort_sets = "descending",
-  name = "Cell line",
-  width_ratio = 0.25,
-  min_size = 1,
-  encode_sets = FALSE,
-
-  set_sizes = (
-
-    # SIZE
-    ComplexUpset::upset_set_size(
-      geom = ggplot2::geom_bar(
-        aes(
-          x = group,
-          y = after_stat(count)
-        ),
-        width = 0.32,
-        fill = "grey40",
-        position = ggplot2::position_nudge(
-          x = -0.18
-  	)))
-
-    +
-    ggplot2::geom_col(
-      aes(
-        x = group,
-        y = coverage_lookup[as.character(group)]
-      ),
-      width = 0.32,
-      fill = "grey70",
-      position = ggplot2::position_nudge(
-        x = 0.18
-      ))  +
-    ggplot2::theme_minimal() +
-    ggplot2::theme(
-      panel.grid.major.y = ggplot2::element_blank(),
-      panel.grid.minor = ggplot2::element_blank(),
-      axis.ticks.x = ggplot2::element_blank()
-    )
-  ),
-  base_annotations = list(
-    "Intersection size" =
-      ComplexUpset::intersection_size(
-        text = list(
-          size = 3,
-          color = "black"
-        ))))
-
-ggsave(
-  "Upset_plot_m6A_sites_all_cell_lines.pdf",
-  final_plot,
-  width = 30,
-  height = 8
-)
-
 #Division of sites by type in core, basal/luminal, cell line specific, others
 luminal_cols <- c("BT483", "MCF7", "T47D")
 basal_cols   <- c("SUM159", "MDAMB231", "BT549")
@@ -228,6 +170,70 @@ consensus_table <- data.frame(consensus_table %>%
 
 write.csv(consensus_table,"ClassA_sites_divided_by_specificity.csv",row.names=FALSE)
 
+group_colors <- c(
+  "Core"    = "#4d85a3",  # azzurro
+  "Luminal" = "#c785c9",  # rosa
+  "Basal"   = "#4a944c",  # verde
+  "Others"   = "grey60"    # cell_line specific / others
+)
+
+final_plot <- ComplexUpset::upset(
+  consensus_table,
+  intersect = cell_lines,
+  sort_sets = "descending",
+  name = "Cell line",
+  width_ratio = 0.25,
+  min_size = 1,
+  encode_sets = FALSE,
+
+  set_sizes = (
+
+    # SIZE
+    ComplexUpset::upset_set_size(
+      geom = ggplot2::geom_bar(
+        aes(
+          x = group,
+          y = after_stat(count)
+        ),
+        width = 0.32,
+        fill = "grey40",
+        position = ggplot2::position_nudge(
+          x = -0.18
+    )))
+
+    +
+    ggplot2::geom_col(
+      aes(
+        x = group,
+        y = coverage_lookup[as.character(group)]
+      ),
+      width = 0.32,
+      fill = "grey70",
+      position = ggplot2::position_nudge(
+        x = 0.18
+      ))  +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(
+      panel.grid.major.y = ggplot2::element_blank(),
+      panel.grid.minor = ggplot2::element_blank(),
+      axis.ticks.x = ggplot2::element_blank()
+    )
+  ),
+  base_annotations = list(
+    "Intersection size" =
+      ComplexUpset::intersection_size(
+        text = list(
+          size = 3,
+          color = "black"
+        ))))
+
+  ggsave(
+    "Upset_plot_m6A_sites_all_cell_lines_new.pdf",
+    final_plot,
+    width = 30,
+    height = 8
+)
+
 #Check if CORE sites are on the same few transcripts
 core_fraction <- consensus_table %>%
   group_by(chrom) %>%
@@ -254,147 +260,147 @@ tx_lengths <- data.frame(
 )
 
 #numeri di trascritti con 1,2,3,4,5 o + siti
-lapply(names(tab), function(k){
+# lapply(names(tab), function(k){
 
-  df <- tab[[k]] %>%
-    mutate(
-      n_sites = str_count(m6A_start_positions, ",") + 1,
-      site_cat = case_when(
-        n_sites == 1 ~ "1",
-        n_sites == 2 ~ "2",
-        n_sites == 3 ~ "3",
-        n_sites == 4 ~ "4",
-        n_sites >= 5 ~ "5+"
-      ),
-      site_cat = factor(site_cat, levels = c("1", "2", "3", "4", "5+"))
-    )
+#   df <- tab[[k]] %>%
+#     mutate(
+#       n_sites = str_count(m6A_start_positions, ",") + 1,
+#       site_cat = case_when(
+#         n_sites == 1 ~ "1",
+#         n_sites == 2 ~ "2",
+#         n_sites == 3 ~ "3",
+#         n_sites == 4 ~ "4",
+#         n_sites >= 5 ~ "5+"
+#       ),
+#       site_cat = factor(site_cat, levels = c("1", "2", "3", "4", "5+"))
+#     )
 
-  counts <- df %>% dplyr::count(site_cat)
+#   counts <- df %>% dplyr::count(site_cat)
 
-  p <- ggplot(counts, aes(x = site_cat, y = n)) +
-    geom_col(fill = "steelblue", alpha = 0.8) +
-    geom_text(aes(label = n), vjust = -0.4, size = 4) +
-    labs(
-      x = "Numero di siti m6A per trascritto",
-      y = "Numero di trascritti",
-      title = paste0("Numero di trascritti per numero di siti m6A - ", k)
-    ) +
-    theme_bw(base_size = 13)
+#   p <- ggplot(counts, aes(x = site_cat, y = n)) +
+#     geom_col(fill = "steelblue", alpha = 0.8) +
+#     geom_text(aes(label = n), vjust = -0.4, size = 4) +
+#     labs(
+#       x = "Numero di siti m6A per trascritto",
+#       y = "Numero di trascritti",
+#       title = paste0("Numero di trascritti per numero di siti m6A - ", k)
+#     ) +
+#     theme_bw(base_size = 13)
 
-  ggsave(paste0(k, "_nTranscriptsBySiteCount.pdf"), p, width = 7, height = 6)
-})
+#   ggsave(paste0(k, "_nTranscriptsBySiteCount.pdf"), p, width = 7, height = 6)
+# })
 
-#Boxplot lunghezza dei trascritti con 1,2,3,4,5 o + siti
-lapply(names(tab), function(k){
+# #Boxplot lunghezza dei trascritti con 1,2,3,4,5 o + siti
+# lapply(names(tab), function(k){
 
-  df <- tab[[k]] %>%
-    mutate(
-      n_sites = str_count(m6A_start_positions, ",") + 1,
-      site_cat = case_when(
-        n_sites == 1 ~ "1",
-        n_sites == 2 ~ "2",
-        n_sites == 3 ~ "3",
-        n_sites == 4 ~ "4",
-        n_sites >= 5 ~ "5+"
-      ),
-      site_cat = factor(site_cat, levels = c("1", "2", "3", "4", "5+"))
-    )
+#   df <- tab[[k]] %>%
+#     mutate(
+#       n_sites = str_count(m6A_start_positions, ",") + 1,
+#       site_cat = case_when(
+#         n_sites == 1 ~ "1",
+#         n_sites == 2 ~ "2",
+#         n_sites == 3 ~ "3",
+#         n_sites == 4 ~ "4",
+#         n_sites >= 5 ~ "5+"
+#       ),
+#       site_cat = factor(site_cat, levels = c("1", "2", "3", "4", "5+"))
+#     )
 
-  df_plot <- df %>%
-    left_join(tx_lengths, by = c("chrom" = "ensembl_transcript_id")) %>%
-    filter(!is.na(transcript_length))
+#   df_plot <- df %>%
+#     left_join(tx_lengths, by = c("chrom" = "ensembl_transcript_id")) %>%
+#     filter(!is.na(transcript_length))
 
-  p <- ggplot(df_plot, aes(x = site_cat, y = transcript_length)) +
-    geom_boxplot(
-	  outlier.size = 0.8,
-	  fill = palette[k],
-	  alpha = 0.6,
-	  varwidth = TRUE
-	)+
-    labs(
-      x = "Numero di siti m6A per trascritto",
-      y = "Lunghezza trascritto",
-      title = paste0("Lunghezza dei trascritti in funzione del numero di siti m6A - ", k)
-    ) +
-    theme_bw(base_size = 13)
+#   p <- ggplot(df_plot, aes(x = site_cat, y = transcript_length)) +
+#     geom_boxplot(
+# 	  outlier.size = 0.8,
+# 	  fill = palette[k],
+# 	  alpha = 0.6,
+# 	  varwidth = TRUE
+# 	)+
+#     labs(
+#       x = "Numero di siti m6A per trascritto",
+#       y = "Lunghezza trascritto",
+#       title = paste0("Lunghezza dei trascritti in funzione del numero di siti m6A - ", k)
+#     ) +
+#     theme_bw(base_size = 13)
 
-  ggsave(paste0(k, "_lengthOfTranscriptsAndSites.pdf"), p, width = 8, height = 8)
-})
+#   ggsave(paste0(k, "_lengthOfTranscriptsAndSites.pdf"), p, width = 8, height = 8)
+# })
 
-#Boxplot lunghezza trascritti divisa per quartili 
-lapply(names(tab), function(k){
+# #Boxplot lunghezza trascritti divisa per quartili 
+# lapply(names(tab), function(k){
 
-  df <- tab[[k]] %>%
-    mutate(
-      n_sites = str_count(m6A_start_positions, ",") + 1,
-      site_cat = case_when(
-        n_sites == 1 ~ "1",
-        n_sites == 2 ~ "2",
-        n_sites == 3 ~ "3",
-        n_sites == 4 ~ "4",
-        n_sites >= 5 ~ "5+"
-      ),
-      site_cat = factor(site_cat, levels = c("1", "2", "3", "4", "5+"))
-    )
+#   df <- tab[[k]] %>%
+#     mutate(
+#       n_sites = str_count(m6A_start_positions, ",") + 1,
+#       site_cat = case_when(
+#         n_sites == 1 ~ "1",
+#         n_sites == 2 ~ "2",
+#         n_sites == 3 ~ "3",
+#         n_sites == 4 ~ "4",
+#         n_sites >= 5 ~ "5+"
+#       ),
+#       site_cat = factor(site_cat, levels = c("1", "2", "3", "4", "5+"))
+#     )
 
-  df_plot <- df %>%
-    left_join(tx_lengths, by = c("chrom" = "ensembl_transcript_id")) %>%
-    filter(!is.na(transcript_length)) %>%
-    group_by(site_cat) %>%
-    mutate(length_quartile = factor(
-      ntile(transcript_length, 4),
-      levels = 1:4,
-      labels = c("Q1", "Q2", "Q3", "Q4")
-    )) %>%
-    ungroup()
+#   df_plot <- df %>%
+#     left_join(tx_lengths, by = c("chrom" = "ensembl_transcript_id")) %>%
+#     filter(!is.na(transcript_length)) %>%
+#     group_by(site_cat) %>%
+#     mutate(length_quartile = factor(
+#       ntile(transcript_length, 4),
+#       levels = 1:4,
+#       labels = c("Q1", "Q2", "Q3", "Q4")
+#     )) %>%
+#     ungroup()
 
-  p <- ggplot(df_plot, aes(x = site_cat, y = transcript_length, fill = length_quartile)) +
-    geom_boxplot(
-	  outlier.size = 0.6,
-	  alpha = 0.8,
-	  varwidth = TRUE,
-	  position = position_dodge(width = 0.8)
-	)
-    labs(
-      x = "Numero di siti m6A per trascritto",
-      y = "Lunghezza trascritto (nt, log10)",
-      fill = "Quartile lunghezza",
-      title = paste0("Lunghezza dei trascritti per quartile e numero di siti m6A - ", k)
-    ) +
-    theme_bw(base_size = 13)
+#   p <- ggplot(df_plot, aes(x = site_cat, y = transcript_length, fill = length_quartile)) +
+#     geom_boxplot(
+# 	  outlier.size = 0.6,
+# 	  alpha = 0.8,
+# 	  varwidth = TRUE,
+# 	  position = position_dodge(width = 0.8)
+# 	)
+#     labs(
+#       x = "Numero di siti m6A per trascritto",
+#       y = "Lunghezza trascritto (nt, log10)",
+#       fill = "Quartile lunghezza",
+#       title = paste0("Lunghezza dei trascritti per quartile e numero di siti m6A - ", k)
+#     ) +
+#     theme_bw(base_size = 13)
 
-  ggsave(paste0(k, "_lengthQuartilesBySiteCount.pdf"), p, width = 10, height = 8)
-})
+#   ggsave(paste0(k, "_lengthQuartilesBySiteCount.pdf"), p, width = 10, height = 8)
+# })
 
-#Boxplot differenze stoichiometrie DMSO divisi per numero di siti
-lapply(names(tab), function(k) {
-  df_plot <- tab[[k]] %>%
-    mutate(
-      n_sites = str_count(m6A_start_positions, ",") + 1,
-      site_cat = case_when(
-        n_sites == 2 ~ "2",
-        n_sites == 3 ~ "3",
-        n_sites == 4 ~ "4",
-        n_sites >= 5 ~ "5+"
-      ),
-      stoich_pct_change = sapply(strsplit(m6A_stoich_dmso_mean, ","), function(x) {
-        x <- as.numeric(x)
-        min_val <- min(x, na.rm = TRUE)
-        max_val <- max(x, na.rm = TRUE)
-        if (is.finite(max_val) && max_val > 0) (max_val - min_val) / max_val * 100 else NA_real_
-      }),
-      site_cat = factor(site_cat, levels = c("2", "3", "4", "5+"))
-    ) %>%
-    filter(!is.na(site_cat), !is.na(stoich_pct_change))
+# #Boxplot differenze stoichiometrie DMSO divisi per numero di siti
+# lapply(names(tab), function(k) {
+#   df_plot <- tab[[k]] %>%
+#     mutate(
+#       n_sites = str_count(m6A_start_positions, ",") + 1,
+#       site_cat = case_when(
+#         n_sites == 2 ~ "2",
+#         n_sites == 3 ~ "3",
+#         n_sites == 4 ~ "4",
+#         n_sites >= 5 ~ "5+"
+#       ),
+#       stoich_pct_change = sapply(strsplit(m6A_stoich_dmso_mean, ","), function(x) {
+#         x <- as.numeric(x)
+#         min_val <- min(x, na.rm = TRUE)
+#         max_val <- max(x, na.rm = TRUE)
+#         if (is.finite(max_val) && max_val > 0) (max_val - min_val) / max_val * 100 else NA_real_
+#       }),
+#       site_cat = factor(site_cat, levels = c("2", "3", "4", "5+"))
+#     ) %>%
+#     filter(!is.na(site_cat), !is.na(stoich_pct_change))
 
-  p <- ggplot(df_plot, aes(x = site_cat, y = stoich_pct_change)) +
-    geom_boxplot(outlier.size = 0.6, fill = palette[k], alpha = 0.6, varwidth = TRUE) +
-    labs(x = "Numero di siti m6A per trascritto", y = "Variazione relativa della stoichiometria DMSO (%)",
-         title = paste0("Variazione della stoichiometria DMSO - ", k)) +
-    theme_bw(base_size = 13)
+#   p <- ggplot(df_plot, aes(x = site_cat, y = stoich_pct_change)) +
+#     geom_boxplot(outlier.size = 0.6, fill = palette[k], alpha = 0.6, varwidth = TRUE) +
+#     labs(x = "Numero di siti m6A per trascritto", y = "Variazione relativa della stoichiometria DMSO (%)",
+#          title = paste0("Variazione della stoichiometria DMSO - ", k)) +
+#     theme_bw(base_size = 13)
 
-  ggsave(paste0(k, "_stoichPercentageChangeBySiteCount.pdf"), p, width = 8, height = 8)
-})
+#   ggsave(paste0(k, "_stoichPercentageChangeBySiteCount.pdf"), p, width = 8, height = 8)
+# })
 
 #IQR delle stoichiometrie dei trascritti con 5 o + siti
 df_iqr <- lapply(names(tab), function(k) {
@@ -454,11 +460,10 @@ coverage_dmso_sum <- coverages_dmso %>%
     .groups = "drop"
   )
 
-HCS_names <-list.files(path="./",pattern="High_condifence_sites.csv",recursive=TRUE)
+HCS_names <-list.files(path="./",pattern="High_confidence_sites_with_Nmod.csv",recursive=TRUE)
 HCS <- lapply(HCS_names,function(i){
 		foe <- read.csv(i,header=TRUE)
 		nrow(foe)
-
 	})
 names(HCS) <- sapply(strsplit(HCS_names, "/", fixed = TRUE), `[`, 1)
 
@@ -476,9 +481,9 @@ scale_factor <- max(df_barplot$Coverage) / max(df_barplot$HCS, df_barplot$Union_
 df_long <- df_long %>%
   mutate(value_plot = if_else(metric == "Coverage", value / scale_factor, value))
 
-cols <- c("HCS" = "#1b9e77",
-          "Union_sites" = "#d95f02",
-          "Coverage" = "#7570b3")
+cols <- c("HCS" = "#b181e3",
+          "Union_sites" = "#5ea5d1",
+          "Coverage" = "grey70")
 
 p <- ggplot(df_long, aes(x = cell_line, y = value_plot, fill = metric)) +
   geom_col(position = position_dodge(width = 0.8), width = 0.75) +
@@ -500,19 +505,20 @@ ggsave("barplot_HCS_union_coverage_dualaxis.pdf", p, width = 9, height = 6)
 ################################################################################################################
 
 #Which percetange of sites undergo a reduction of at least one fold?
-HCS_names <-list.files(path="./",pattern="High_condifence_sites.csv",recursive=TRUE)
+HCS_names <-list.files(path="./",pattern="High_confidence_sites_with_Nmod.csv",recursive=TRUE)
 HCS <- lapply(HCS_names,function(i){
     foe <- read.csv(i,header=TRUE)
   })
+names(HCS) <- sapply(strsplit(HCS_names, "/", fixed = TRUE), `[`, 1) 
 
 HCS_log2FC <- lapply(HCS,function(i){
 	dens = i
 	dens$mean_DMSO <- rowMeans(dens[, grep("percent_modified_DMSO", colnames(dens))], na.rm = TRUE)
-	dens$mean_STORM <- rowMeans(dens[, grep("percent_modified_STORM", colnames(dens))], na.rm = TRUE)
+	dens$mean_STORM <- rowMeans(dens[, grep("percent_modified_STM", colnames(dens))], na.rm = TRUE)
 	dens$log2FC <- log2((dens$mean_STORM + 1) / (dens$mean_DMSO + 1))
-	round(100*nrow(dens[dens$log2FC<(-1),])/nrow(i),2)
+	round(100*sum(dens$log2FC<(-2))/nrow(i),2)
 })
-#BT483 87.17  #BT549 98.36  #MCF7 96.13  #MDAMB231 96.37  #SUM159 75.56  #T47D 95.81
+#BT483 87.78  #BT549 98.48  #MCF7 96.48  #MDAMB231 96.48  #SUM159 76.45  #T47D 96.13
 
 count_sites <- function(x) {
   # gestisce eventuali NA o stringhe vuote
@@ -579,7 +585,6 @@ p <- ggplot(stats_df, aes(x = cell_line)) +
 
 ggsave("Boxplot_statistics_on_number_sites.pdf", p, width = 9, height = 6)
 
-
 #Boxplot lunghezza dei trascritti con (1-2),(3-4),(5-10), (20 o +) siti
 df_all <- lapply(names(tab), function(k){
   tab[[k]] %>%
@@ -620,12 +625,6 @@ ggsave("all_cellLines_lengthOfTranscriptsDividedByRangesOfNumberSites.pdf", p, w
 
 #######################################################################################################
 #Stratify the reduction in stoichiometry per number of m6A sites
-HCS_names <-list.files(path="./",pattern="High_condifence_sites.csv",recursive=TRUE)
-HCS <- lapply(HCS_names,function(i){
-		foe <- read.csv(i,header=TRUE)
-	})
-names(HCS) <- sapply(strsplit(HCS_names, "/", fixed = TRUE), `[`, 1)
-
 m6a_tables <- lapply(names(HCS), function(i){
 
 	print(i)
@@ -636,7 +635,7 @@ m6a_tables <- lapply(names(HCS), function(i){
     rowwise() %>%
     mutate(
       stoich_dmso_site  = sum(c_across(matches("^percent_modified_DMSO(_rep\\d+)?$")),  na.rm = TRUE),
-      stoich_storm_site = sum(c_across(matches("^percent_modified_STORM(_rep\\d+)?$")), na.rm = TRUE)
+      stoich_storm_site = sum(c_across(matches("^percent_modified_STM(_rep\\d+)?$")), na.rm = TRUE)
     ) %>%
     ungroup() %>%
     group_by(chrom) %>%
@@ -669,10 +668,10 @@ p <- ggplot(df_all_reductions, aes(x = diff_dmso_storm, color = cell_line)) +
   scale_color_manual(values = palette) +
   coord_cartesian(xlim = c(0, 5000)) +
   labs(
-    x = "Differenza stoichiometria (DMSO - STORM)",
-    y = "Densità",
+    x = "Difference in stoichiometry (DMSO - STORM)",
+    y = "Density",
     color = "Cell line",
-    title = "Distribuzione della differenza di stoichiometria per trascritto"
+    title = "Distribution of stoichiometry difference per transcript"
   ) +
   theme_bw(base_size = 13)
 
@@ -707,8 +706,8 @@ p <- ggplot(df_all_delta, aes(x = site_cat, y = log2(diff_dmso_storm), fill = ce
   ) +
   scale_fill_manual(values = palette) +
   labs(
-    x = "Numero di siti m6A per trascritto",
-    y = "Differenza stoichiometria (DMSO - STORM)",
+    x = "Number of m6A sites per transcript",
+    y = "Log2 of difference in stoichiometry (DMSO - STORM)",
     fill = "Cell line",
     title = "Differenza di stoichiometria in funzione del numero di siti m6A, per cell line"
   ) +
@@ -726,6 +725,8 @@ m6ascore_per_reg <- lapply(names(tab),function(i){
     )
   })
 names(m6ascore_per_reg) <- names(tab)
+
+df_box <- dplyr::bind_rows(m6ascore_per_reg, .id = "cell_line")
 
 df_box <- df_box %>%
   dplyr::mutate(cell_line = factor(cell_line, levels = nuovo_ordine))
@@ -745,7 +746,7 @@ p <- ggplot(df_box, aes(regulation, diff_dmso_storm, fill = regulation)) +
             vjust = -0.5, size = 2.5, inherit.aes = FALSE) +
   scale_fill_manual(values = cols) +
   facet_wrap(~ cell_line, nrow = 1) +
-  labs(x = NULL, y = "diff_dmso_storm (DMSO - STORM)") +
+  labs(x = NULL, y = "DMSO - STORM") +
   theme_classic() +
   theme(legend.position = "none",
         strip.background = element_blank(),
@@ -754,52 +755,51 @@ p <- ggplot(df_box, aes(regulation, diff_dmso_storm, fill = regulation)) +
 n_cl <- length(nuovo_ordine)
 ggsave("boxplot_diff_stoich_by_regulation.pdf", p, width = 2.2 * n_cl, height = 4)
 
-
 #Scatter reduction stochiometry vs DTE
-tab_with_diff_stoich <- lapply(names(tab),function(i){
-		left_join(tab[[i]],delta_stoich_transcripts[[i]],by=c("chrom","m6A_start_positions"))
-	})
-names(tab_with_diff_stoich) <- names(tab)
+# tab_with_diff_stoich <- lapply(names(tab),function(i){
+# 		left_join(tab[[i]],delta_stoich_transcripts[[i]],by=c("chrom","m6A_start_positions"))
+# 	})
+# names(tab_with_diff_stoich) <- names(tab)
 
-lapply(names(tab_with_diff_stoich), function(k){
-  df <- tab_with_diff_stoich[[k]]
+# lapply(names(tab_with_diff_stoich), function(k){
+#   df <- tab_with_diff_stoich[[k]]
   
-  p <- ggplot(df, aes(x = diff_dmso_storm, y = log2FC)) +
-    geom_point(alpha = 0.4, size = 1) +
-    facet_wrap(~ regulation) +
-    scale_color_manual(values = colori_regulation) +
-    labs(
-      x = "Differenza stoichiometria (DMSO - STORM)",
-      y = "log2FC(DTE)",
-      title = paste0("log2FC vs differenza di stoichiometria, per classe di regolazione - ", k)
-    ) +
-    theme_bw(base_size = 13)
+#   p <- ggplot(df, aes(x = diff_dmso_storm, y = log2FC)) +
+#     geom_point(alpha = 0.4, size = 1) +
+#     facet_wrap(~ regulation) +
+#     scale_color_manual(values = colori_regulation) +
+#     labs(
+#       x = "Differenza stoichiometria (DMSO - STORM)",
+#       y = "log2FC(DTE)",
+#       title = paste0("log2FC vs differenza di stoichiometria, per classe di regolazione - ", k)
+#     ) +
+#     theme_bw(base_size = 13)
   
-  ggsave(paste0(k, "_scatter_log2FC_vs_diffStoich_byRegulation.pdf"), p, width = 10, height = 4)
-})
+#   ggsave(paste0(k, "_scatter_log2FC_vs_diffStoich_byRegulation.pdf"), p, width = 10, height = 4)
+# })
 
 
-colori_regulation <- c("NS" = "grey70", "UP" = "red", "DOWN" = "skyblue")
+# colori_regulation <- c("NS" = "grey70", "UP" = "red", "DOWN" = "skyblue")
 
-lapply(names(tab_with_diff_stoich), function(k){
-  df_plot <- tab_with_diff_stoich[[k]] %>%
-  mutate(n_sites = str_count(m6A_start_positions, ",") + 1) %>%
-    filter(!is.na(diff_dmso_storm)) %>%
-    arrange(factor(regulation, levels = c("NS", "UP", "DOWN")))  # NS sotto, up/down sopra
+# lapply(names(tab_with_diff_stoich), function(k){
+#   df_plot <- tab_with_diff_stoich[[k]] %>%
+#   mutate(n_sites = str_count(m6A_start_positions, ",") + 1) %>%
+#     filter(!is.na(diff_dmso_storm)) %>%
+#     arrange(factor(regulation, levels = c("NS", "UP", "DOWN")))  # NS sotto, up/down sopra
   
-  p <- ggplot(df_plot, aes(x = diff_dmso_storm/n_sites, y = log2FC, color = regulation)) +
-    geom_point(alpha = 0.5, size = 1) +
-    scale_color_manual(values = colori_regulation) +
-    labs(
-      x = "Differenza stoichiometria (DMSO - STORM)",
-      y = "log2FC",
-      color = "Regulation",
-      title = paste0("log2FC vs differenza di stoichiometria - ", k)
-    ) +
-    theme_bw(base_size = 13)
+#   p <- ggplot(df_plot, aes(x = diff_dmso_storm/n_sites, y = log2FC, color = regulation)) +
+#     geom_point(alpha = 0.5, size = 1) +
+#     scale_color_manual(values = colori_regulation) +
+#     labs(
+#       x = "Differenza stoichiometria (DMSO - STORM)",
+#       y = "log2FC",
+#       color = "Regulation",
+#       title = paste0("log2FC vs differenza di stoichiometria - ", k)
+#     ) +
+#     theme_bw(base_size = 13)
   
-  ggsave(paste0(k, "_scatter_log2FC_vs_diffStoich_byRegulation_colored_norm.pdf"), p, width = 8, height = 6)
-})
+#   ggsave(paste0(k, "_scatter_log2FC_vs_diffStoich_byRegulation_colored_norm.pdf"), p, width = 8, height = 6)
+# })
 
 #Gene ontology on up and down-regulated genes
 GO <- lapply(names(tab_with_diff_stoich), function(k){

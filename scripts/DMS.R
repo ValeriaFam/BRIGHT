@@ -17,6 +17,9 @@ suppressPackageStartupMessages({
   library("future.apply")
   library("data.table")
   library("parallel")
+  library("tidyr")
+  library("dplyr")
+  library("BiocParallel")
 })
 # =============================================================================
 # 0.  SIMULATED INPUT  (delete this block once you plug in real data)
@@ -27,48 +30,55 @@ suppressPackageStartupMessages({
 #   counts_unmod: sites x 23 integer matrix
 luminal <- c("BT483", "MCF7", "T47D")
 basal   <- c("SUM159", "MDAMB231", "BT549")
-bedMethylFiles <- list.files(path="/projects/CGS_shared/vfama/BRIGHT_PROJECT/",pattern="filtCov.m6A.bed",recursive=TRUE)
-bedMethylFiles <- bedMethylFiles[grep("DMSO",bedMethylFiles)]
-metadata <- data.frame("sample_id" = sapply(strsplit(bedMethylFiles, "/"), `[`, 2),
-                       "cell_line" = factor(sapply(strsplit(bedMethylFiles, "/"), `[`, 1)))
+files <- list.files(path="/projects/CGS_shared/vfama/BRIGHT_PROJECT/",pattern="with_Nmod.csv",recursive=TRUE)
+lst <- lapply(files, function(f){
+  hdr  <- names(fread(f, nrows = 0))
+  dens <- fread(f, select = c(hdr[1:3], grep("DMSO", hdr, value = TRUE)))
+  dens[, site := paste(chrom, start_position1, sep = ":")]
+  dens
+})
+names(lst) <- sapply(strsplit(files, "/"), `[`, 1)
+
+metadata <- dplyr::bind_rows(lapply(names(lst), function(cl){
+  cols <- grep("percent_modified_DMSO", colnames(lst[[cl]]), value = TRUE)
+  data.frame(
+    cell_line = cl,
+    sample_id = paste(cl, sub(".*_(rep[0-9]+)$", "\\1", cols), sep = "_"),
+    stringsAsFactors = FALSE
+  )
+}))
 metadata$subtype <- factor(ifelse(metadata$cell_line %in% luminal, "luminal",
                     ifelse(metadata$cell_line %in% basal,   "basal", NA)))
 
-read_one <- function(f) {
-  d <- fread(file.path("/projects/CGS_shared/vfama/BRIGHT_PROJECT/", f), header = TRUE, sep = "\t",
-             select = c(1, 2, 10, 11, 12),
-             col.names = c("chrom", "start", "Nvalid_cov","percent_modified","mod"))
-  d[, site := paste(chrom, start, sep = ":")]
-  d[, .(site,percent_modified,Nvalid_cov, mod)]
-} #Read the bedMethyl files to get the columns we need
+sites <- Reduce(union, lapply(lst, `[[`, "site")) #collect all the unique sites -> 163751
 
-lst <- lapply(bedMethylFiles, read_one)
-names(lst) <- metadata$sample_id
-sites <- Reduce(union, lapply(lst, `[[`, "site")) #collect all the unique sites
+long <- bind_rows(lst, .id = "cell_line") %>%
+  pivot_longer(
+    cols      = matches("_DMSO_rep"),
+    names_to  = c(".value", "replicate"),
+    names_pattern = "(Nvalid_cov|percent_modified|Nmod)_DMSO_(rep\\d+)"
+  ) %>%
+  mutate(sample_id = paste(cell_line, replicate, sep = "_"),
+         n_unmod   = Nvalid_cov - Nmod)
 
-HCS_names <-list.files(path="./",pattern="High_condifence_sites.csv",recursive=TRUE)
-HCS <- lapply(HCS_names,function(i){
-    foe <- read.csv(i,header=TRUE)
-    paste0(foe$chrom,":",foe$start_position1)
-  })
-names(HCS) <- sapply(strsplit(HCS_names, "/", fixed = TRUE), `[`, 1)
-HCS_sites <- Reduce(union,HCS)
+get_mat <- function(var, fill = 0) {
+  long %>%
+    select(site, sample_id, value = all_of(var)) %>%
+    pivot_wider(names_from = sample_id, values_from = value) %>%
+    tibble::column_to_rownames("site") %>%
+    as.matrix() %>%
+    .[sites, metadata$sample_id] %>%        # stesso ordine di sites e metadata
+    replace(is.na(.), fill)
+}
 
-get_mat <- function(col) {
-  m <- sapply(lst, function(d) d[[col]][match(HCS_sites, d$site)])
-  rownames(m) <- HCS_sites
-  m[is.na(m)] <- 0          #site absent in that rep = 0 read
-  m
-} #Extract mod and unmod counts for each site
-
-counts_mod   <- get_mat("mod")
-counts_unmod <- get_mat("Nvalid_cov") - get_mat("mod")
+counts_mod   <- get_mat("Nmod")
+counts_unmod <- get_mat("n_unmod")
 stoich <- get_mat("percent_modified")
 
 stopifnot(identical(colnames(counts_mod), metadata$sample_id),
           identical(dim(counts_mod), dim(counts_unmod)))
 
-message("sites in: ", nrow(counts_mod), " | libraries: ", nrow(metadata)) #211109 sites
+message("sites in: ", nrow(counts_mod), " | libraries: ", nrow(metadata)) #163751 sites
 
 # -----------------------------------------------------------------------------
 # PARAMETERS
@@ -115,12 +125,12 @@ if (length(bad_libs)) message("outlier libraries: ", paste(bad_libs, collapse = 
 # 2.  VECTORISED SITE FILTERS   (boolean, ANDed, all BEFORE any model fit)
 # =============================================================================
 # Keep sites that have coverage everywhere
-tot <- counts_mod + counts_unmod
+tot         <- counts_mod + counts_unmod
 line_levels <- levels(metadata$cell_line)
 line_of_col <- as.integer(metadata$cell_line)
 
 #--- 2a. coverage: replicati usabili per linea ---
-keep_libs <- rowSums(tot >= PAR$min_reads_library) == ncol(tot) #5.7M
+keep_libs <- rowSums(tot >= PAR$min_reads_library) == ncol(tot) #22953
 
 #--- 2b. stoichiometry ---
 luminal_cols <- c("BT483", "MCF7", "T47D")
@@ -152,7 +162,7 @@ attrition <- data.frame(
   n = c(nrow(tot), sum(keep_libs), sum(keep))
 )
 print(attrition)
-sites_final <- which(keep) #32134
+sites_final <- which(keep) #22953
 # =============================================================================
 # 3.  THE MODEL
 # =============================================================================
@@ -210,10 +220,22 @@ fit_site <- function(i, mod_mat, unm_mat, md, par) {
 # =============================================================================
 # 4.  RUN  (parallel; chunk this across array jobs on the cluster)
 # =============================================================================
-res_list <- mclapply(sites, fit_site,
+metadata$cell_line <- factor(metadata$cell_line, levels = unique(metadata$cell_line))
+metadata$sample_id <- as.character(metadata$sample_id)
+
+bp <- MulticoreParam(workers = PAR$n_workers,
+                     progressbar = TRUE,
+                     stop.on.error = FALSE,   # un sito che fallisce non butta via tutto
+                     RNGseed = 1)             # opzionale: risultati riproducibili se fit_site usa numeri casuali
+
+res_list <- bplapply(seq_len(nrow(counts_mod)), fit_site,
                      mod_mat = counts_mod, unm_mat = counts_unmod,
                      md = metadata, par = PAR,
-                     mc.cores = PAR$n_workers)
+                     BPPARAM = bp)
+
+failed <- !bpok(res_list)
+if (any(failed)) message("errors: ", sum(failed))
+res_list <- res_list[!failed]
 
 res <- rbindlist(Filter(Negate(is.null), res_list))
 message("fitted: ", nrow(res), " / ", length(sites),
@@ -238,11 +260,11 @@ if (frac_singular > 0.40)
 res[, df_res := n_obs - 2L]
 res[, disp_norm := dispersion / (qchisq(0.5, df_res) / df_res)]
 message(sprintf("median normalised dispersion: %.2f  (target ~1)",
-                median(res$disp_norm, na.rm = TRUE)))              # 1.35 -> piccolo eccesso di variabilità residua
+                median(res$disp_norm, na.rm = TRUE)))              # 1.50 -> piccolo eccesso di variabilità residua
 
 # (c) How big is the between-line variance? This is what limits your power.
 message(sprintf("median SD(cell_line) on logit scale: %.2f",
-                median(res$sd_cellline, na.rm = TRUE)))            #0.23 -> le linee sono abbastanza simili (ci piace?)
+                median(res$sd_cellline, na.rm = TRUE)))            #0.14 -> le linee sono abbastanza simili (ci piace?)
 
 # =============================================================================
 # 6.  GLOBAL SHIFT: estimate it on beta (logit), remove it, recalibrate
@@ -420,3 +442,5 @@ print(head(final[, .(site, delta_pp = round(delta_pp, 1),
                      sd_cellline = round(sd_cellline, 2),
                      loo_worst_ratio = round(loo_worst_ratio, 2))], 15))
 
+df_final <- data.frame(final)
+df_final_sorted <- df_final %>% arrange(desc(delta_pp))
