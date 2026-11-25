@@ -157,360 +157,360 @@ bplapply(seq_along(cell_line),function(k){
 	# #Inserire plot con sia wt che storm >=20
 
 	# ########################## BOXPLOT ###############################
-	# dens <- high_confidence
+	dens <- high_confidence
 
-	# dens$mean_DMSO <- rowMeans(dens[, grep("percent_modified_DMSO", colnames(dens))], na.rm = TRUE)
-	# dens$mean_STORM <- rowMeans(dens[, grep("percent_modified_STM", colnames(dens))], na.rm = TRUE)
-	# dens$log2FC <- log2((dens$mean_STORM + 1) / (dens$mean_DMSO + 1))
+	dens$mean_DMSO <- rowMeans(dens[, grep("percent_modified_DMSO", colnames(dens))], na.rm = TRUE)
+	dens$mean_STORM <- rowMeans(dens[, grep("percent_modified_STM", colnames(dens))], na.rm = TRUE)
+	dens$log2FC <- log2((dens$mean_STORM + 1) / (dens$mean_DMSO + 1))
 	
-	# dens$bin <- cut(dens$mean_DMSO, 
-	#               breaks = seq(0, 100, by = 10),
-	#               labels = paste0(seq(0, 90, by = 10), "-", seq(10, 100, by = 10)),
-	#               include.lowest = TRUE)
+	dens$bin <- cut(dens$mean_DMSO, 
+	              breaks = seq(0, 100, by = 10),
+	              labels = paste0(seq(0, 90, by = 10), "-", seq(10, 100, by = 10)),
+	              include.lowest = TRUE)
 	
-	# p <- ggplot(dens, aes(x = bin, y = as.numeric(log2FC))) +
-	#   geom_boxplot(fill = palette[k], alpha = 0.7, outlier.size = 0.5) +
-	#   geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
-	#   theme_classic() +
-	#   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-	#   xlab("DMSO stoichiometry bin (%)") +
-	#   ylab("log2FC (STORM/DMSO)")
+	p <- ggplot(dens, aes(x = bin, y = as.numeric(log2FC))) +
+	  geom_boxplot(fill = palette[k], alpha = 0.7, outlier.size = 0.5) +
+	  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+	  theme_classic() +
+	  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+	  xlab("DMSO stoichiometry bin (%)") +
+	  ylab("log2FC (STORM/DMSO)")
 	
-	# ggsave(filename=paste0(path,cell_line[k],"_Log2FC_new.pdf"),p)
+	ggsave(filename=paste0(path,cell_line[k],"_Log2FC_new.pdf"),p)
 
-	# # ######################## METAGENE #################################
+	# ######################## METAGENE #################################
 
-	# ###################### protein coding 
-	# #Get UTR and CDS lengths per transcript
-	# tx_lengths <- ORF_prediction %>% 
-	#   left_join( biotype %>% dplyr::select(transcript_id, GENCODE_biotype), by = "transcript_id") %>%                     
-	#   distinct(transcript_id, .keep_all = TRUE) %>%
-	#   filter(GENCODE_biotype == "Protein coding") %>%
-	#   filter(!is.na(ORF_Start), !is.na(ORF_End)) %>% # solo trascritti con ORF
-	#   transmute(
-	#     transcript_id,
-	#     tx_len   = as.numeric(transcript_length),            # nome della tua colonna
-	#     utr5_len = ORF_Start - 1,
-	#     cds_len  = ORF_End - ORF_Start + 1,
-	#     utr3_len = transcript_length - ORF_End
-	#   )
+	###################### protein coding 
+	#Get UTR and CDS lengths per transcript
+	tx_lengths <- ORF_prediction %>% 
+	  left_join( biotype %>% dplyr::select(transcript_id, GENCODE_biotype), by = "transcript_id") %>%                     
+	  distinct(transcript_id, .keep_all = TRUE) %>%
+	  filter(GENCODE_biotype == "Protein coding") %>%
+	  filter(!is.na(ORF_Start), !is.na(ORF_End)) %>% # solo trascritti con ORF
+	  transmute(
+	    transcript_id,
+	    tx_len   = as.numeric(transcript_length),            # nome della tua colonna
+	    utr5_len = ORF_Start - 1,
+	    cds_len  = ORF_End - ORF_Start + 1,
+	    utr3_len = transcript_length - ORF_End
+	  )
 	
-	# high_confidence$chrom <- sub("\\([+-]\\)$", "", high_confidence$chrom)
+	high_confidence$chrom <- sub("\\([+-]\\)$", "", high_confidence$chrom)
 	
-	# df_sites <- high_confidence %>%
-	#   inner_join(tx_lengths, by = c("chrom" = "transcript_id")) %>%
-	#   mutate(
-	#     region = case_when(
-	#       start_position1 <= utr5_len             ~ "5'UTR",
-	#       start_position1 <= utr5_len + cds_len   ~ "CDS",
-	#       start_position1 <= tx_len               ~ "3'UTR",
-	#       TRUE ~ NA_character_
-	#     ),
-	#     norm_position = case_when(
-	#       region == "5'UTR" ~ start_position1 / utr5_len,
-	#       region == "CDS"   ~ (start_position1 - utr5_len) / cds_len,
-	#       region == "3'UTR" ~ (start_position1 - utr5_len - cds_len) / utr3_len
-	#     ),
-	#     meta_position = case_when(
-	#       region == "5'UTR" ~ norm_position,
-	#       region == "CDS"   ~ 1 + norm_position,
-	#       region == "3'UTR" ~ 2 + norm_position
-	#     )
-	#   ) %>%
-	#   filter(!is.na(meta_position))
+	df_sites <- high_confidence %>%
+	  inner_join(tx_lengths, by = c("chrom" = "transcript_id")) %>%
+	  mutate(
+	    region = case_when(
+	      start_position1 <= utr5_len             ~ "5'UTR",
+	      start_position1 <= utr5_len + cds_len   ~ "CDS",
+	      start_position1 <= tx_len               ~ "3'UTR",
+	      TRUE ~ NA_character_
+	    ),
+	    norm_position = case_when(
+	      region == "5'UTR" ~ start_position1 / utr5_len,
+	      region == "CDS"   ~ (start_position1 - utr5_len) / cds_len,
+	      region == "3'UTR" ~ (start_position1 - utr5_len - cds_len) / utr3_len
+	    ),
+	    meta_position = case_when(
+	      region == "5'UTR" ~ norm_position,
+	      region == "CDS"   ~ 1 + norm_position,
+	      region == "3'UTR" ~ 2 + norm_position
+	    )
+	  ) %>%
+	  filter(!is.na(meta_position))
 
-	# df_sites <- df_sites %>%
-	#   mutate(tipo = case_when(
-	#     startsWith(chrom, "ENST")       ~ "annotated",
-	#     startsWith(chrom, "transcript") ~ "novel",
-	#     TRUE                            ~ "other"
-	#   ))
+	df_sites <- df_sites %>%
+	  mutate(tipo = case_when(
+	    startsWith(chrom, "ENST")       ~ "annotated",
+	    startsWith(chrom, "transcript") ~ "novel",
+	    TRUE                            ~ "other"
+	  ))
 
-	# n_tipo <- df_sites %>%
-	#   filter(tipo %in% c("annotated", "novel")) %>%
-	#   group_by(tipo) %>%
-	#   summarise(n_tx = n_distinct(chrom), .groups = "drop")
+	n_tipo <- df_sites %>%
+	  filter(tipo %in% c("annotated", "novel")) %>%
+	  group_by(tipo) %>%
+	  summarise(n_tx = n_distinct(chrom), .groups = "drop")
 	
-	# lab_tx <- setNames(
-	#   paste0(c(annotated = "Annotated", novel = "Novel")[n_tipo$tipo],
-	#          " (n = ", n_tipo$n_tx, " transcripts)"),
-	#   n_tipo$tipo
-	# )
+	lab_tx <- setNames(
+	  paste0(c(annotated = "Annotated", novel = "Novel")[n_tipo$tipo],
+	         " (n = ", n_tipo$n_tx, " transcripts)"),
+	  n_tipo$tipo
+	)
 	
-	# #  # --- 3. Compute density per treatment ---
-	# # Pivot to get a "is this site in WT / STORM" column
-	# df_wt    <- df_sites %>% filter(rowMeans(!is.na(dplyr::select(., contains("percent_modified_DMSO"))))    > 0)
-	# df_storm <- df_sites %>% filter(rowMeans(!is.na(dplyr::select(., contains("percent_modified_STM")))) > 0)
+	#  # --- 3. Compute density per treatment ---
+	# Pivot to get a "is this site in WT / STORM" column
+	df_wt    <- df_sites %>% filter(rowMeans(!is.na(dplyr::select(., contains("percent_modified_DMSO"))))    > 0)
+	df_storm <- df_sites %>% filter(rowMeans(!is.na(dplyr::select(., contains("percent_modified_STM")))) > 0)
 	
-	# df_density <- bind_rows(
-	#   df_sites %>% 
-	#     dplyr::select(meta_position,tipo, matches("percent_modified.*DMSO")) %>%
-	#     pivot_longer(-c(meta_position,tipo), names_to = "sample", values_to = "pct") %>%
-	#     filter(!is.na(pct), !is.na(meta_position)) %>%
-	#     mutate(treatment = "DMSO"),
+	df_density <- bind_rows(
+	  df_sites %>% 
+	    dplyr::select(meta_position,tipo, matches("percent_modified.*DMSO")) %>%
+	    pivot_longer(-c(meta_position,tipo), names_to = "sample", values_to = "pct") %>%
+	    filter(!is.na(pct), !is.na(meta_position)) %>%
+	    mutate(treatment = "DMSO"),
 	  
-	#   df_sites %>% 
-	#     dplyr::select(meta_position,tipo, matches("percent_modified.*STM")) %>%
-	#     pivot_longer(-c(meta_position,tipo), names_to = "sample", values_to = "pct") %>%
-    # 	filter(!is.na(pct), !is.na(meta_position)) %>%
-    # 	mutate(treatment = "STORM")%>%
-  	# 	filter(tipo %in% c("annotated", "novel"))
-  	# )
+	  df_sites %>% 
+	    dplyr::select(meta_position,tipo, matches("percent_modified.*STM")) %>%
+	    pivot_longer(-c(meta_position,tipo), names_to = "sample", values_to = "pct") %>%
+    	filter(!is.na(pct), !is.na(meta_position)) %>%
+    	mutate(treatment = "STORM")%>%
+  		filter(tipo %in% c("annotated", "novel"))
+  	)
 	
-	# # --- 4. Metagene plot ---
-	# p2 <- ggplot(df_density, aes(x = meta_position, color = treatment, linetype = treatment)) +
-  	# 	geom_line(aes(group = interaction(sample, tipo)), stat = "density", adjust = 0.5,
-  	# 	          linewidth = 0.5, alpha = 0.35) +
-  	# 	geom_line(aes(group = interaction(treatment, tipo)), stat = "density", adjust = 0.5,
-  	# 	          linewidth = 1.3) +
-  	# 	facet_wrap(~ tipo, nrow = 1, labeller = as_labeller(lab_tx)) +
-  	# 	scale_linetype_manual(values = c("DMSO" = "solid", "STORM" = "dashed")) +
-  	# 	scale_color_manual(values = c("DMSO" = "blue", "STORM" = "red")) +
-  	# 	scale_x_continuous(breaks = c(0.5, 1.5, 2.5),
-  	# 	                   labels = c("5'UTR", "CDS", "3'UTR"),
-  	# 	                   limits = c(0, 3)) +
-  	# 	geom_vline(xintercept = c(1, 2), linetype = "dotted", color = "grey40") +
-  	# 	labs(x = "", y = "m6A site density", color = "Treatment", linetype = "Treatment") +
-  	# 	theme_classic(base_size = 16) +
-  	# 	theme(axis.text.x = element_text(size = 12, face = "bold"),
-  	# 	      strip.background = element_blank(),
-  	# 	      strip.text = element_text(face = "bold"),
-  	# 	      panel.spacing = unit(1.5, "lines"))
+	# --- 4. Metagene plot ---
+	p2 <- ggplot(df_density, aes(x = meta_position, color = treatment, linetype = treatment)) +
+  		geom_line(aes(group = interaction(sample, tipo)), stat = "density", adjust = 0.5,
+  		          linewidth = 0.5, alpha = 0.35) +
+  		geom_line(aes(group = interaction(treatment, tipo)), stat = "density", adjust = 0.5,
+  		          linewidth = 1.3) +
+  		facet_wrap(~ tipo, nrow = 1, labeller = as_labeller(lab_tx)) +
+  		scale_linetype_manual(values = c("DMSO" = "solid", "STORM" = "dashed")) +
+  		scale_color_manual(values = c("DMSO" = "blue", "STORM" = "red")) +
+  		scale_x_continuous(breaks = c(0.5, 1.5, 2.5),
+  		                   labels = c("5'UTR", "CDS", "3'UTR"),
+  		                   limits = c(0, 3)) +
+  		geom_vline(xintercept = c(1, 2), linetype = "dotted", color = "grey40") +
+  		labs(x = "", y = "m6A site density", color = "Treatment", linetype = "Treatment") +
+  		theme_classic(base_size = 16) +
+  		theme(axis.text.x = element_text(size = 12, face = "bold"),
+  		      strip.background = element_blank(),
+  		      strip.text = element_text(face = "bold"),
+  		      panel.spacing = unit(1.5, "lines"))
 	
-	# ggsave(paste0(path,cell_line[k],"_metagene_m6A_density_new.pdf"), plot=p2,width = 15, height = 5)
+	ggsave(paste0(path,cell_line[k],"_metagene_m6A_density_new.pdf"), plot=p2,width = 15, height = 5)
 
-	# ############ lncRNA
+	############ lncRNA
 
-  	# df_sites_nc <- high_confidence %>%
-    # 	inner_join(nc_lengths, by = c("chrom" = "transcript_id")) %>%
-    # 	filter(start_position1 >= 1, start_position1 <= tx_len) %>%
-    # 	mutate(norm_position = start_position1 / tx_len) %>%
-	# 	mutate(tipo = case_when(
-	# 	  startsWith(chrom, "ENST")       ~ "annotated",
-	# 	  startsWith(chrom, "transcript") ~ "novel",
-	# 	  TRUE                            ~ "other"
-	# 	))
+  	df_sites_nc <- high_confidence %>%
+    	inner_join(nc_lengths, by = c("chrom" = "transcript_id")) %>%
+    	filter(start_position1 >= 1, start_position1 <= tx_len) %>%
+    	mutate(norm_position = start_position1 / tx_len) %>%
+		mutate(tipo = case_when(
+		  startsWith(chrom, "ENST")       ~ "annotated",
+		  startsWith(chrom, "transcript") ~ "novel",
+		  TRUE                            ~ "other"
+		))
 
-	# df_density_nc <- bind_rows(
-    # 	df_sites_nc %>%
-    # 	  dplyr::select(norm_position,tipo, matches("percent_modified.*DMSO")) %>%
-    # 	  pivot_longer(-c(norm_position,tipo), names_to = "sample", values_to = "pct") %>%
-    # 	  filter(!is.na(pct)) %>%
-    # 	  mutate(treatment = "DMSO"),
+	df_density_nc <- bind_rows(
+    	df_sites_nc %>%
+    	  dplyr::select(norm_position,tipo, matches("percent_modified.*DMSO")) %>%
+    	  pivot_longer(-c(norm_position,tipo), names_to = "sample", values_to = "pct") %>%
+    	  filter(!is.na(pct)) %>%
+    	  mutate(treatment = "DMSO"),
   	
-    # 	df_sites_nc %>%
-    # 	  dplyr::select(norm_position, tipo, matches("percent_modified.*STM")) %>%
-    # 	  pivot_longer(-c(norm_position,tipo), names_to = "sample", values_to = "pct") %>%
-    # 	  filter(!is.na(pct)) %>%
-    # 	  mutate(treatment = "STORM")
-  	# )
+    	df_sites_nc %>%
+    	  dplyr::select(norm_position, tipo, matches("percent_modified.*STM")) %>%
+    	  pivot_longer(-c(norm_position,tipo), names_to = "sample", values_to = "pct") %>%
+    	  filter(!is.na(pct)) %>%
+    	  mutate(treatment = "STORM")
+  	)
 
-	# n_tipo_nc <- df_sites_nc %>%
-	#   filter(tipo %in% c("annotated", "novel")) %>%
-	#   group_by(tipo) %>%
-	#   summarise(n_tx = n_distinct(chrom), .groups = "drop")
+	n_tipo_nc <- df_sites_nc %>%
+	  filter(tipo %in% c("annotated", "novel")) %>%
+	  group_by(tipo) %>%
+	  summarise(n_tx = n_distinct(chrom), .groups = "drop")
 	
-	# lab_tx_nc <- setNames(
-	#   paste0(c(annotated = "Annotated", novel = "Novel")[n_tipo_nc$tipo],
-	#          " (n = ", n_tipo_nc$n_tx, " transcripts)"),
-	#   n_tipo_nc$tipo
-	# )
+	lab_tx_nc <- setNames(
+	  paste0(c(annotated = "Annotated", novel = "Novel")[n_tipo_nc$tipo],
+	         " (n = ", n_tipo_nc$n_tx, " transcripts)"),
+	  n_tipo_nc$tipo
+	)
 
-	# p_lnc <- ggplot(df_density_nc %>% filter(tipo %in% c("annotated", "novel")),
-    #             aes(x = norm_position, color = treatment, linetype = treatment)) +
-	# 		  # replicati: una curva per campione, sottile e trasparente
-	# 		  geom_line(aes(group = interaction(sample, tipo)), stat = "density", adjust = 0.5,
-	# 		            linewidth = 0.5, alpha = 0.35) +
-	# 		  # curva per trattamento: replicati uniti, spessa
-	# 		  geom_line(aes(group = interaction(treatment, tipo)), stat = "density", adjust = 0.5,
-	# 		            linewidth = 1.3) +
-	# 		  facet_wrap(~ tipo, nrow = 1, labeller = as_labeller(lab_tx_nc)) +
-	# 		  scale_linetype_manual(values = c("DMSO" = "solid", "STORM" = "dashed")) +
-	# 		  scale_color_manual(values = c("DMSO" = "blue", "STORM" = "red")) +
-	# 		  scale_x_continuous(
-	# 		    breaks = c(0, 0.5, 1),
-	# 		    labels = c("5' end", "middle", "3' end"),
-	# 		    limits = c(0, 1)
-	# 		  ) +
-	# 		  labs(x = "", y = "m6A site density",
-	# 		       title = "lncRNA",
-	# 		       color = "Treatment", linetype = "Treatment") +
-	# 		  theme_classic(base_size = 16) +
-	# 		  theme(axis.text.x = element_text(size = 12, face = "bold"),
-	# 		        strip.background = element_blank(),
-	# 		        strip.text = element_text(face = "bold"),
-	# 		        panel.spacing = unit(1.5, "lines"))
+	p_lnc <- ggplot(df_density_nc %>% filter(tipo %in% c("annotated", "novel")),
+                aes(x = norm_position, color = treatment, linetype = treatment)) +
+			  # replicati: una curva per campione, sottile e trasparente
+			  geom_line(aes(group = interaction(sample, tipo)), stat = "density", adjust = 0.5,
+			            linewidth = 0.5, alpha = 0.35) +
+			  # curva per trattamento: replicati uniti, spessa
+			  geom_line(aes(group = interaction(treatment, tipo)), stat = "density", adjust = 0.5,
+			            linewidth = 1.3) +
+			  facet_wrap(~ tipo, nrow = 1, labeller = as_labeller(lab_tx_nc)) +
+			  scale_linetype_manual(values = c("DMSO" = "solid", "STORM" = "dashed")) +
+			  scale_color_manual(values = c("DMSO" = "blue", "STORM" = "red")) +
+			  scale_x_continuous(
+			    breaks = c(0, 0.5, 1),
+			    labels = c("5' end", "middle", "3' end"),
+			    limits = c(0, 1)
+			  ) +
+			  labs(x = "", y = "m6A site density",
+			       title = "lncRNA",
+			       color = "Treatment", linetype = "Treatment") +
+			  theme_classic(base_size = 16) +
+			  theme(axis.text.x = element_text(size = 12, face = "bold"),
+			        strip.background = element_blank(),
+			        strip.text = element_text(face = "bold"),
+			        panel.spacing = unit(1.5, "lines"))
 
-	# ggsave(paste0(path,cell_line[k],"_metagene_m6A_density_lncRNA_new.pdf"), plot=p_lnc,width = 15, height = 5)
+	ggsave(paste0(path,cell_line[k],"_metagene_m6A_density_lncRNA_new.pdf"), plot=p_lnc,width = 15, height = 5)
 
 
-	# ######################### TABLE HCS AND VOLCANO PLOTS ###########################
+	######################### TABLE HCS AND VOLCANO PLOTS ###########################
 	
-	# n_samples <- length(names_files)/2
-	# #Load transcript files
-	# tr_tpm_dmso <- read.table(paste0("/projects/CGS_shared/vfama/BRIGHT_PROJECT/IsoQuant_BRIGHT/",cell_line[k],"_DMSO/",cell_line[k],"_DMSO.transcript_grouped_tpm.tsv"),header=TRUE)
-	# tr_tpm_stm <- read.table(paste0("/projects/CGS_shared/vfama/BRIGHT_PROJECT/IsoQuant_BRIGHT/",cell_line[k],"_STM/",cell_line[k],"_STM.transcript_grouped_tpm.tsv"),header=TRUE)
-	# tr_counts_dmso <- read.table(paste0("/projects/CGS_shared/vfama/BRIGHT_PROJECT/IsoQuant_BRIGHT/",cell_line[k],"_DMSO/",cell_line[k],"_DMSO.transcript_grouped_counts.tsv"),header=TRUE)
-	# tr_counts_stm <- read.table(paste0("/projects/CGS_shared/vfama/BRIGHT_PROJECT/IsoQuant_BRIGHT/",cell_line[k],"_STM/",cell_line[k],"_STM.transcript_grouped_counts.tsv"),header=TRUE)
+	n_samples <- length(names_files)/2
+	#Load transcript files
+	tr_tpm_dmso <- read.table(paste0("/projects/CGS_shared/vfama/BRIGHT_PROJECT/IsoQuant_BRIGHT/",cell_line[k],"_DMSO/",cell_line[k],"_DMSO.transcript_grouped_tpm.tsv"),header=TRUE)
+	tr_tpm_stm <- read.table(paste0("/projects/CGS_shared/vfama/BRIGHT_PROJECT/IsoQuant_BRIGHT/",cell_line[k],"_STM/",cell_line[k],"_STM.transcript_grouped_tpm.tsv"),header=TRUE)
+	tr_counts_dmso <- read.table(paste0("/projects/CGS_shared/vfama/BRIGHT_PROJECT/IsoQuant_BRIGHT/",cell_line[k],"_DMSO/",cell_line[k],"_DMSO.transcript_grouped_counts.tsv"),header=TRUE)
+	tr_counts_stm <- read.table(paste0("/projects/CGS_shared/vfama/BRIGHT_PROJECT/IsoQuant_BRIGHT/",cell_line[k],"_STM/",cell_line[k],"_STM.transcript_grouped_counts.tsv"),header=TRUE)
 
-	# #Load gene files
-	# gene_tpm_dmso <- read.table(paste0("/projects/CGS_shared/vfama/BRIGHT_PROJECT/IsoQuant_BRIGHT/",cell_line[k],"_DMSO/",cell_line[k],"_DMSO.gene_grouped_tpm.tsv"),header=TRUE)
-	# gene_tpm_stm <- read.table(paste0("/projects/CGS_shared/vfama/BRIGHT_PROJECT/IsoQuant_BRIGHT/",cell_line[k],"_STM/",cell_line[k],"_STM.gene_grouped_tpm.tsv"),header=TRUE)
-	# gene_counts_dmso <- read.table(paste0("/projects/CGS_shared/vfama/BRIGHT_PROJECT/IsoQuant_BRIGHT/",cell_line[k],"_DMSO/",cell_line[k],"_DMSO.gene_grouped_counts.tsv"),header=TRUE)
-	# gene_counts_stm <- read.table(paste0("/projects/CGS_shared/vfama/BRIGHT_PROJECT/IsoQuant_BRIGHT/",cell_line[k],"_STM/",cell_line[k],"_STM.gene_grouped_counts.tsv"),header=TRUE)
+	#Load gene files
+	gene_tpm_dmso <- read.table(paste0("/projects/CGS_shared/vfama/BRIGHT_PROJECT/IsoQuant_BRIGHT/",cell_line[k],"_DMSO/",cell_line[k],"_DMSO.gene_grouped_tpm.tsv"),header=TRUE)
+	gene_tpm_stm <- read.table(paste0("/projects/CGS_shared/vfama/BRIGHT_PROJECT/IsoQuant_BRIGHT/",cell_line[k],"_STM/",cell_line[k],"_STM.gene_grouped_tpm.tsv"),header=TRUE)
+	gene_counts_dmso <- read.table(paste0("/projects/CGS_shared/vfama/BRIGHT_PROJECT/IsoQuant_BRIGHT/",cell_line[k],"_DMSO/",cell_line[k],"_DMSO.gene_grouped_counts.tsv"),header=TRUE)
+	gene_counts_stm <- read.table(paste0("/projects/CGS_shared/vfama/BRIGHT_PROJECT/IsoQuant_BRIGHT/",cell_line[k],"_STM/",cell_line[k],"_STM.gene_grouped_counts.tsv"),header=TRUE)
 
-	# #Run DESeq2 on transcript raw counts
-	# tr_counts <- full_join(tr_counts_dmso,tr_counts_stm,by="gene_id")
-	# tr_counts[is.na(tr_counts)] <- 0
-	# rownames(tr_counts) <- tr_counts$gene_id
-	# tr_counts <- tr_counts[,-1]
+	#Run DESeq2 on transcript raw counts
+	tr_counts <- full_join(tr_counts_dmso,tr_counts_stm,by="gene_id")
+	tr_counts[is.na(tr_counts)] <- 0
+	rownames(tr_counts) <- tr_counts$gene_id
+	tr_counts <- tr_counts[,-1]
 
-	# coldata <- data.frame(
-	#   row.names = colnames(tr_counts),
-	#   condition = factor(c(rep("DMSO", n_samples), rep("STM", n_samples)),
-	#                      levels = c("DMSO", "STM"))  # DMSO = reference
-	# )
-	# dds <- DESeqDataSetFromMatrix(
-	#   countData = tr_counts,
-	#   colData   = coldata,
-	#   design    = ~ condition
-	# )
-	# keep <- rowSums(cpm(dds)>1)>=(n_samples-1) #we are setting a threshold on the expression
-  	# dds <- dds[keep,]
-	# dds <- DESeq(dds)
-	# res <- results(dds,
-	#                contrast = c("condition", "STM", "DMSO"),
-	#                alpha = 0.05)
+	coldata <- data.frame(
+	  row.names = colnames(tr_counts),
+	  condition = factor(c(rep("DMSO", n_samples), rep("STM", n_samples)),
+	                     levels = c("DMSO", "STM"))  # DMSO = reference
+	)
+	dds <- DESeqDataSetFromMatrix(
+	  countData = tr_counts,
+	  colData   = coldata,
+	  design    = ~ condition
+	)
+	keep <- rowSums(cpm(dds)>1)>=(n_samples-1) #we are setting a threshold on the expression
+  	dds <- dds[keep,]
+	dds <- DESeq(dds)
+	res <- results(dds,
+	               contrast = c("condition", "STM", "DMSO"),
+	               alpha = 0.05)
 
-	# #Volcano plot on transcripts
-	# res_df <- as.data.frame(res)
-	# res_df$gene <- rownames(res_df)
-	# res_df <- na.omit(res_df) # Rimuovi NA (geni filtrati da DESeq2)
+	#Volcano plot on transcripts
+	res_df <- as.data.frame(res)
+	res_df$gene <- rownames(res_df)
+	res_df <- na.omit(res_df) # Rimuovi NA (geni filtrati da DESeq2)
 	
-	# res_df$status <- "NS" #Gene classification
-	# res_df$status[res_df$padj < 0.05 & res_df$log2FoldChange >=  1] <- "UP"
-	# res_df$status[res_df$padj < 0.05 & res_df$log2FoldChange <= -1] <- "DOWN"
-	# res_df$status <- factor(res_df$status, levels = c("UP", "DOWN", "NS"))
+	res_df$status <- "NS" #Gene classification
+	res_df$status[res_df$padj < 0.05 & res_df$log2FoldChange >=  1] <- "UP"
+	res_df$status[res_df$padj < 0.05 & res_df$log2FoldChange <= -1] <- "DOWN"
+	res_df$status <- factor(res_df$status, levels = c("UP", "DOWN", "NS"))
 
-	# write.csv(res_df,paste0(path,cell_line[k],"_DTE.csv"),row.names=TRUE)
+	write.csv(res_df,paste0(path,cell_line[k],"_DTE.csv"),row.names=TRUE)
 	
-	# top_genes <- res_df[res_df$status != "NS", ] #Geni da etichettare (top 10 per padj)
-	# top_genes <- top_genes[order(top_genes$padj), ][1:10, ]
+	top_genes <- res_df[res_df$status != "NS", ] #Geni da etichettare (top 10 per padj)
+	top_genes <- top_genes[order(top_genes$padj), ][1:10, ]
 	
-	# volcano <- ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj), color = status)) +
-	#   geom_point(alpha = 0.6, size = 1.5) +
-	#   scale_color_manual(values = c("UP" = "#E41A1C", "DOWN" = "#377EB8", "NS" = "grey70")) +
-	#   geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black", linewidth = 0.4) +
-	#   geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black", linewidth = 0.4) +
-	#   geom_text_repel(
-	#     data = top_genes,
-	#     aes(label = gene),
-	#     size = 3,
-	#     color = "black",
-	#     max.overlaps = 20
-	#   ) +
-	#   labs(
-	#     title = paste0(cell_line[k]," - DTE STM vs DMSO"),
-	#     x = "log2 Fold Change",
-	#     y = "-log10(padj)",
-	#     color = "Status"
-	#   ) +
-	#   theme_classic(base_size = 13)
-	# ggsave(filename=paste0(path,cell_line[k],"_Volcano_plot_on_transcript_new.pdf"),volcano)
+	volcano <- ggplot(res_df, aes(x = log2FoldChange, y = -log10(padj), color = status)) +
+	  geom_point(alpha = 0.6, size = 1.5) +
+	  scale_color_manual(values = c("UP" = "#E41A1C", "DOWN" = "#377EB8", "NS" = "grey70")) +
+	  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black", linewidth = 0.4) +
+	  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black", linewidth = 0.4) +
+	  geom_text_repel(
+	    data = top_genes,
+	    aes(label = gene),
+	    size = 3,
+	    color = "black",
+	    max.overlaps = 20
+	  ) +
+	  labs(
+	    title = paste0(cell_line[k]," - DTE STM vs DMSO"),
+	    x = "log2 Fold Change",
+	    y = "-log10(padj)",
+	    color = "Status"
+	  ) +
+	  theme_classic(base_size = 13)
+	ggsave(filename=paste0(path,cell_line[k],"_Volcano_plot_on_transcript_new.pdf"),volcano)
 
 
-	# ### Build the table
-	# m6a_table <- high_confidence %>%
-	#   rowwise() %>%
-	#   mutate(
-	#     stoich_dmso_mean = mean(c_across(matches("^percent_modified_DMSO(_rep\\d+)?$")), na.rm = TRUE),
-	#     stoich_storm_mean = mean(c_across(matches("^percent_modified_STM(_rep\\d+)?$")), na.rm = TRUE),
-	#     diff_dmso_storm = stoich_dmso_mean - stoich_storm_mean
-	#   ) %>%
-	#   ungroup() %>%
-	#   group_by(chrom) %>%
-	#   summarise(
-	#     m6A_start_positions = paste(start_position1, collapse = ","),
-	#     m6A_stoich_dmso_mean = paste(round(stoich_dmso_mean, 2), collapse = ","),
-	#     m6A_diff_dmso_storm = paste(round(diff_dmso_storm, 2), collapse = ","),
-	#     .groups = "drop"
-	#   )
-	# colnames(tr_tpm_dmso)[-1] <- paste0("TMP_",colnames(tr_tpm_dmso)[-1])
-	# transcript_features <- data.frame("id"=res_df$gene,"log2FC"=res_df$log2FoldChange,"p-val"=res_df$padj,"regulation"=res_df$status)
-	# m6a_table_with_features <- m6a_table %>% left_join(tr_tpm_dmso,by=c("chrom"="gene_id"))  %>% left_join(transcript_features,by=c("chrom"="id"))
-	# m6a_table_with_features <- m6a_table %>%
-  	# 	left_join(tr_tpm_dmso, by = c("chrom" = "gene_id")) %>%
-  	# 	left_join(transcript_features, by = c("chrom" = "id"))
+	### Build the table
+	m6a_table <- high_confidence %>%
+	  rowwise() %>%
+	  mutate(
+	    stoich_dmso_mean = mean(c_across(matches("^percent_modified_DMSO(_rep\\d+)?$")), na.rm = TRUE),
+	    stoich_storm_mean = mean(c_across(matches("^percent_modified_STM(_rep\\d+)?$")), na.rm = TRUE),
+	    diff_dmso_storm = stoich_dmso_mean - stoich_storm_mean
+	  ) %>%
+	  ungroup() %>%
+	  group_by(chrom) %>%
+	  summarise(
+	    m6A_start_positions = paste(start_position1, collapse = ","),
+	    m6A_stoich_dmso_mean = paste(round(stoich_dmso_mean, 2), collapse = ","),
+	    m6A_diff_dmso_storm = paste(round(diff_dmso_storm, 2), collapse = ","),
+	    .groups = "drop"
+	  )
+	colnames(tr_tpm_dmso)[-1] <- paste0("TMP_",colnames(tr_tpm_dmso)[-1])
+	transcript_features <- data.frame("id"=res_df$gene,"log2FC"=res_df$log2FoldChange,"p-val"=res_df$padj,"regulation"=res_df$status)
+	m6a_table_with_features <- m6a_table %>% left_join(tr_tpm_dmso,by=c("chrom"="gene_id"))  %>% left_join(transcript_features,by=c("chrom"="id"))
+	m6a_table_with_features <- m6a_table %>%
+  		left_join(tr_tpm_dmso, by = c("chrom" = "gene_id")) %>%
+  		left_join(transcript_features, by = c("chrom" = "id"))
 
 	
-	# # Join con tabella
-	# m6a_table_with_features_complete <- left_join(m6a_table_with_features, gtf_df,by = c("chrom" = "transcript_id"))
+	# Join con tabella
+	m6a_table_with_features_complete <- left_join(m6a_table_with_features, gtf_df,by = c("chrom" = "transcript_id"))
 
-	# ### DESeq2 and volcano on gene counts
-	# gene_counts <- full_join(gene_counts_dmso,gene_counts_stm,by="gene_id")
-	# gene_counts[is.na(gene_counts)] <- 0
-	# rownames(gene_counts) <- gene_counts$gene_id
-	# gene_counts <- gene_counts[,-1]
+	### DESeq2 and volcano on gene counts
+	gene_counts <- full_join(gene_counts_dmso,gene_counts_stm,by="gene_id")
+	gene_counts[is.na(gene_counts)] <- 0
+	rownames(gene_counts) <- gene_counts$gene_id
+	gene_counts <- gene_counts[,-1]
 	
-	# coldata_genes <- data.frame(
-	#   row.names = colnames(gene_counts),
-	#   condition = factor(c(rep("DMSO", n_samples), rep("STM", n_samples)),
-	#                      levels = c("DMSO", "STM"))  # DMSO = reference
-	# )
-	# dds_genes <- DESeqDataSetFromMatrix(
-	#   countData = gene_counts,
-	#   colData   = coldata_genes,
-	#   design    = ~ condition
-	# )
-	# keep_genes <- rowSums(cpm(dds_genes)>1)>=(n_samples-1) #we are setting a threshold on the expression
-	# dds_genes <- dds_genes[keep_genes,]
-	# dds_genes <- DESeq(dds_genes)
-	# res_genes <- results(dds_genes,
-	#                contrast = c("condition", "STM", "DMSO"),
-	#                alpha = 0.05)
+	coldata_genes <- data.frame(
+	  row.names = colnames(gene_counts),
+	  condition = factor(c(rep("DMSO", n_samples), rep("STM", n_samples)),
+	                     levels = c("DMSO", "STM"))  # DMSO = reference
+	)
+	dds_genes <- DESeqDataSetFromMatrix(
+	  countData = gene_counts,
+	  colData   = coldata_genes,
+	  design    = ~ condition
+	)
+	keep_genes <- rowSums(cpm(dds_genes)>1)>=(n_samples-1) #we are setting a threshold on the expression
+	dds_genes <- dds_genes[keep_genes,]
+	dds_genes <- DESeq(dds_genes)
+	res_genes <- results(dds_genes,
+	               contrast = c("condition", "STM", "DMSO"),
+	               alpha = 0.05)
 
-	# #Volcano plot
-	# res_df_genes <- as.data.frame(res_genes)
-	# res_df_genes$gene <- rownames(res_df_genes)
-	# res_df_genes <- na.omit(res_df_genes) # Rimuovi NA (geni filtrati da DESeq2)
+	#Volcano plot
+	res_df_genes <- as.data.frame(res_genes)
+	res_df_genes$gene <- rownames(res_df_genes)
+	res_df_genes <- na.omit(res_df_genes) # Rimuovi NA (geni filtrati da DESeq2)
 	
-	# res_df_genes$status <- "NS" #Gene classification
-	# res_df_genes$status[res_df_genes$padj < 0.05 & res_df_genes$log2FoldChange >  1] <- "UP"
-	# res_df_genes$status[res_df_genes$padj < 0.05 & res_df_genes$log2FoldChange < -1] <- "DOWN"
-	# res_df_genes$status <- factor(res_df_genes$status, levels = c("UP", "DOWN", "NS"))
+	res_df_genes$status <- "NS" #Gene classification
+	res_df_genes$status[res_df_genes$padj < 0.05 & res_df_genes$log2FoldChange >  1] <- "UP"
+	res_df_genes$status[res_df_genes$padj < 0.05 & res_df_genes$log2FoldChange < -1] <- "DOWN"
+	res_df_genes$status <- factor(res_df_genes$status, levels = c("UP", "DOWN", "NS"))
 
-	# write.csv(res_df_genes,paste0(path,cell_line[k],"_DGE.csv"),row.names=TRUE)
+	write.csv(res_df_genes,paste0(path,cell_line[k],"_DGE.csv"),row.names=TRUE)
 	
-	# top_genes <- res_df_genes[res_df_genes$status != "NS", ] #Geni da etichettare (top 10 per padj)
-	# top_genes <- top_genes[order(top_genes$padj), ][1:10, ]
+	top_genes <- res_df_genes[res_df_genes$status != "NS", ] #Geni da etichettare (top 10 per padj)
+	top_genes <- top_genes[order(top_genes$padj), ][1:10, ]
 	
-	# volcano_genes <- ggplot(res_df_genes, aes(x = log2FoldChange, y = -log10(padj), color = status)) +
-	#   geom_point(alpha = 0.6, size = 1.5) +
-	#   scale_color_manual(values = c("UP" = "#E41A1C", "DOWN" = "#377EB8", "NS" = "grey70")) +
-	#   geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black", linewidth = 0.4) +
-	#   geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black", linewidth = 0.4) +
-	#   geom_text_repel(
-	#     data = top_genes,
-	#     aes(label = gene),
-	#     size = 3,
-	#     color = "black",
-	#     max.overlaps = 20
-	#   ) +
-	#   labs(
-	#     title = paste0(cell_line[k]," - DEG STM vs DMSO"),
-	#     x = "log2 Fold Change",
-	#     y = "-log10(padj)",
-	#     color = "Status"
-	#   ) +
-	#   theme_classic(base_size = 13)
-	# ggsave(paste0(path,cell_line[k],"_Volcano_plot_on_genes_new.pdf"),volcano_genes)
+	volcano_genes <- ggplot(res_df_genes, aes(x = log2FoldChange, y = -log10(padj), color = status)) +
+	  geom_point(alpha = 0.6, size = 1.5) +
+	  scale_color_manual(values = c("UP" = "#E41A1C", "DOWN" = "#377EB8", "NS" = "grey70")) +
+	  geom_vline(xintercept = c(-1, 1), linetype = "dashed", color = "black", linewidth = 0.4) +
+	  geom_hline(yintercept = -log10(0.05), linetype = "dashed", color = "black", linewidth = 0.4) +
+	  geom_text_repel(
+	    data = top_genes,
+	    aes(label = gene),
+	    size = 3,
+	    color = "black",
+	    max.overlaps = 20
+	  ) +
+	  labs(
+	    title = paste0(cell_line[k]," - DEG STM vs DMSO"),
+	    x = "log2 Fold Change",
+	    y = "-log10(padj)",
+	    color = "Status"
+	  ) +
+	  theme_classic(base_size = 13)
+	ggsave(paste0(path,cell_line[k],"_Volcano_plot_on_genes_new.pdf"),volcano_genes)
 
-	# #Faccio il join con la tabella degli high confidence
-	# colnames(res_df_genes) <- paste0(colnames(res_df_genes),"_genes")
-	# tab_m6a_complete <- left_join(m6a_table_with_features_complete,
-    #                res_df_genes %>% dplyr::select(gene_genes, log2FoldChange_genes, padj_genes, status_genes),
-    #                by = c("gene_id" = "gene_genes"))
-	# write.csv(tab_m6a_complete,paste0(path,cell_line[k],"_sites_per_transcript_and_features_new.csv"),row.names=TRUE)
+	#Faccio il join con la tabella degli high confidence
+	colnames(res_df_genes) <- paste0(colnames(res_df_genes),"_genes")
+	tab_m6a_complete <- left_join(m6a_table_with_features_complete,
+                   res_df_genes %>% dplyr::select(gene_genes, log2FoldChange_genes, padj_genes, status_genes),
+                   by = c("gene_id" = "gene_genes"))
+	write.csv(tab_m6a_complete,paste0(path,cell_line[k],"_sites_per_transcript_and_features_new.csv"),row.names=TRUE)
 
 }, BPPARAM = param )
 

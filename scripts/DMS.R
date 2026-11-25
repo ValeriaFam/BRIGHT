@@ -126,6 +126,7 @@ if (length(bad_libs)) message("outlier libraries: ", paste(bad_libs, collapse = 
 # =============================================================================
 # Keep sites that have coverage everywhere
 tot         <- counts_mod + counts_unmod
+metadata$cell_line <- factor(metadata$cell_line)
 line_levels <- levels(metadata$cell_line)
 line_of_col <- as.integer(metadata$cell_line)
 
@@ -228,7 +229,7 @@ bp <- MulticoreParam(workers = PAR$n_workers,
                      stop.on.error = FALSE,   # un sito che fallisce non butta via tutto
                      RNGseed = 1)             # opzionale: risultati riproducibili se fit_site usa numeri casuali
 
-res_list <- bplapply(seq_len(nrow(counts_mod)), fit_site,
+res_list <- bplapply(sites_final, fit_site,
                      mod_mat = counts_mod, unm_mat = counts_unmod,
                      md = metadata, par = PAR,
                      BPPARAM = bp)
@@ -444,3 +445,5 @@ print(head(final[, .(site, delta_pp = round(delta_pp, 1),
 
 df_final <- data.frame(final)
 df_final_sorted <- df_final %>% arrange(desc(delta_pp))
+
+core_DMS <- df_final_sorted[c(1:5,(nrow(df_final_sorted)-5):nrow(df_final_sorted)),]

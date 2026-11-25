@@ -25,17 +25,91 @@ library("msigdbr")
 library("ggVennDiagram")
 library("stringr")
 
+path <-  "/projects/CGS_shared/vfama/BRIGHT_PROJECT/"
 cell_line <- c("MCF7","BT483","T47D","SUM159","MDAMB231","BT549")
-palette <- c(MCF7="#CC6677",BT483="#882255",T47D="#AA4499",SUM159="#117733",MDAMB231="#999933",BT549="#44AA99")
 luminal <- cell_line[1:3]
 basal <- cell_line[4:6]
-path <-  "/projects/CGS_shared/vfama/BRIGHT_PROJECT/"
+palette <- c(MCF7="#CC6677",BT483="#882255",T47D="#AA4499",SUM159="#117733",MDAMB231="#999933",BT549="#44AA99")
 
+########################################################################################################################################
+#Stratification on TPMs
+DTE_files <- list.files(path="./",pattern="DTE.csv",recursive=TRUE)
+DTE <- lapply(DTE_files,function(i)read.table(i,sep=",",header=TRUE))
+names(DTE) <- sapply(strsplit(DTE_files, "/", fixed = TRUE), `[`, 1)
+
+tr_tpm_dmso <- list.files(path="/projects/CGS_shared/vfama/BRIGHT_PROJECT/IsoQuant_BRIGHT/",pattern="_DMSO.transcript_grouped_tpm.tsv",recursive=TRUE,full.names = TRUE)
+TPM <- lapply(tr_tpm_dmso,function(i)read.table(i,sep="\t",header=TRUE))
+names(TPM) <- names(DTE) 
+
+
+tr_tpm_stm <- list.files(path="/projects/CGS_shared/vfama/BRIGHT_PROJECT/IsoQuant_BRIGHT/",pattern="_STM.transcript_grouped_tpm.tsv",recursive=TRUE,full.names = TRUE)
+TPM_STM <- lapply(tr_tpm_stm,function(i)read.table(i,sep="\t",header=TRUE))
+names(TPM_STM) <- names(DTE)
+
+foe <- lapply(names(DTE),function(i){
+    tpm <-   data.frame(gene_id    = TPM[[i]]$gene_id,
+             median_tpm = matrixStats::rowMedians(as.matrix(TPM[[i]][, -1]), na.rm = TRUE))
+}) 
+
+stratification <- lapply(foe, function(k) {
+  k$tpm_bin <- cut(k$median_tpm,
+                   breaks = quantile(k$median_tpm, probs = seq(0, 1, 0.25), na.rm = TRUE),
+                   include.lowest = TRUE,
+                   labels = c("Q1_low", "Q2", "Q3", "Q4_high"))
+  k
+})
+
+brk_line <- lapply(foe, function(k)
+  quantile(k$median_tpm, probs = seq(0, 1, 0.25), na.rm = TRUE))
+
+all_bins <- bind_rows(stratification, .id = "cell_line") %>%
+  filter(!is.na(tpm_bin), !is.na(log2FoldChange)) %>%
+  filter(log2FoldChange > 0)
+lab <- c("Q1_low", "Q2", "Q3", "Q4_high")
+
+foe_stm <- lapply(names(DTE),function(i){
+    tpm <-   data.frame(gene_id    = TPM_STM[[i]]$gene_id,
+             median_tpm = matrixStats::rowMedians(as.matrix(TPM_STM[[i]][, -1]), na.rm = TRUE))
+    left_join(DTE[[i]],tpm,by=c("X"="gene_id"))
+  })
+names(foe_stm) <- names(DTE)
+
+stratification_storm <- Map(function(k, b) {
+  b[1] <- -Inf; b[length(b)] <- Inf     # niente NA per valori fuori dal range DMSO
+  k$tpm_bin <- cut(k$median_tpm, breaks = b, include.lowest = TRUE, labels = lab)
+  k
+}, foe_stm, brk_line)
+
+all_bins_storm <- bind_rows(stratification_storm, .id = "cell_line") %>%
+  filter(!is.na(tpm_bin), !is.na(log2FoldChange)) %>%
+  filter(log2FoldChange > 0)
+
+
+p <- ggplot(all_bins, aes(x = tpm_bin, y = log2FoldChange, fill = cell_line)) +
+  geom_boxplot(outlier.size = 0.3, outlier.alpha = 0.3,
+               position = position_dodge(width = 0.8), width = 0.7) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(x = "Median TPM (DMSO) bin", y = "log2FC (positive only)") +
+  scale_fill_manual(values = palette)
+  theme_bw()
+ggsave("Counts_DTE_stratification_upReg.pdf", p, width = 6, height = 5)
+
+p <- ggplot(all_bins_storm, aes(x = tpm_bin, y = median_tpm, fill = cell_line)) +
+  geom_boxplot(outlier.shape = NA,
+               position = position_dodge(width = 0.8), width = 0.7) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(x = "Median TPM (DMSO) bin", y = "Median TPM (STORM)") +
+  scale_fill_manual(values = palette)
+  theme_bw()
+p <- p + ylim(c(0,150))
+ggsave("Counts_DTE_stratification_upReg_stm.pdf", p, width = 6, height = 5)
+
+#############################################################################################################################
 #Read the tables
-names_tab <- list.files(path=".",pattern="sites_per_transcript_and_features.csv",recursive=TRUE)
+names_tab <- list.files(path=".",pattern="sites_per_transcript_and_features_new.csv",recursive=TRUE)
 tab <- lapply(names_tab,function(i){
-		read.csv(i,header=TRUE)
-	})
+    read.csv(i,header=TRUE)
+  })
 names(tab) <- gsub(".*/([A-Za-z0-9]+)_.*\\.csv$", "\\1", names_tab)
 
 #Genes and transcripts not tested are NAs -> renamed in not tested
@@ -145,28 +219,28 @@ p2 <- ggplot(dge_df, aes(x = cell_line, y = perc, fill = DTE)) +
 ###Gene Ontology
 GO_on_subtype <- function(subtype)
 {
-	m_subtype <- sapply(disreg_genes[subtype], function(s) {
-  		all_genes_subtype <- unique(unlist(disreg_genes[subtype]))
-  		all_genes_subtype %in% s
-	})
-	rownames(m_subtype) <- unique(unlist(disreg_genes[subtype]))
-	n_subtype <- rowSums(m_subtype)
-	subtype_disreg_genes <- rownames(m_subtype)[n_subtype >= 2]
-	
-	#Universo
-	all_genes_tab <- lapply(tab[subtype], function(df) unique(df$gene_id))
-	all_genes_subtype <- unique(unlist(all_genes_tab))
-	n_subtype <- sapply(all_genes_subtype, function(g) sum(sapply(all_genes_tab, function(s) g %in% s)))
-	universe_subtype <- all_genes_subtype[n_subtype >= 2]
-	#Clean versions
-	gene_ids_clean     <- sub("\\..*", "", subtype_disreg_genes)
-	universe_ids_clean <- sub("\\..*", "", universe_subtype)
-	#Gene Ontology
-	go_luminal <- enrichGO(
-	  gene = gene_ids_clean, universe = universe_ids_clean,
-	  OrgDb = org.Hs.eg.db, keyType = "ENSEMBL", ont = "ALL",
-	  pAdjustMethod = "BH", pvalueCutoff = 0.05, qvalueCutoff = 0.2, readable = TRUE
-	)
+  m_subtype <- sapply(disreg_genes[subtype], function(s) {
+      all_genes_subtype <- unique(unlist(disreg_genes[subtype]))
+      all_genes_subtype %in% s
+  })
+  rownames(m_subtype) <- unique(unlist(disreg_genes[subtype]))
+  n_subtype <- rowSums(m_subtype)
+  subtype_disreg_genes <- rownames(m_subtype)[n_subtype >= 2]
+  
+  #Universo
+  all_genes_tab <- lapply(tab[subtype], function(df) unique(df$gene_id))
+  all_genes_subtype <- unique(unlist(all_genes_tab))
+  n_subtype <- sapply(all_genes_subtype, function(g) sum(sapply(all_genes_tab, function(s) g %in% s)))
+  universe_subtype <- all_genes_subtype[n_subtype >= 2]
+  #Clean versions
+  gene_ids_clean     <- sub("\\..*", "", subtype_disreg_genes)
+  universe_ids_clean <- sub("\\..*", "", universe_subtype)
+  #Gene Ontology
+  go_luminal <- enrichGO(
+    gene = gene_ids_clean, universe = universe_ids_clean,
+    OrgDb = org.Hs.eg.db, keyType = "ENSEMBL", ont = "ALL",
+    pAdjustMethod = "BH", pvalueCutoff = 0.05, qvalueCutoff = 0.2, readable = TRUE
+  )
 }
 
 GO_lum <- GO_on_subtype(luminal) #no term enriched
@@ -434,7 +508,7 @@ conta_gene_disregolati <- function(res, tab, cell_lines, min_5_6 = 5, min_2_3 = 
     gene_totali       <- unique(gene_map$gene_id[gene_map$chrom %in% ids])
 
     tr_di_geni_disreg <- ids[ids %in% gene_map$chrom[gene_map$gene_id %in% gene_disregolati]]
-	tr_non_disreg     <- setdiff(ids, tr_di_geni_disreg)
+  tr_non_disreg     <- setdiff(ids, tr_di_geni_disreg)
 
     list(
       summary = data.frame(
@@ -779,9 +853,9 @@ ggsave("m6A_diff_by_regulation_DTE_per_line.pdf", p, width = 10, height = 7)
 ####################################### DTU and DTE ###########################################
 DRIMseq_names <- list.files(path=".",pattern="prioritized_DIUs_DMSO_vs_STM",recursive=TRUE)[-1]
 DRIMseq_results <- lapply(DRIMseq_names,function(i){
-		foe <- read.table(i,sep="\t",header=TRUE)
-		foe <- foe$txID
-	})
+    foe <- read.table(i,sep="\t",header=TRUE)
+    foe <- foe$txID
+  })
 names(DRIMseq_results) <- sapply(strsplit(DRIMseq_names, "/"), `[`, 2)
 
 Scisorseq_results <- readRDS("Scisorseq_ENST.rds")
